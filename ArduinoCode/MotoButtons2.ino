@@ -12,7 +12,7 @@ Device: Seeed XIAO nRF52840 (MotoButtons 2)
 using namespace Adafruit_LittleFS_Namespace;
 
 // Enable serial debugging (turn this off if not connected to PC)
-#define DEBUG false
+#define DEBUG true
 
 // How long to wait until DFU reset mode is activated
 #define MODE_RESET_MS 10000
@@ -101,7 +101,7 @@ const uint8_t DMD_KEY_UP = HID_KEY_ARROW_UP;
 const uint8_t DMD_KEY_DOWN = HID_KEY_ARROW_DOWN;
 const uint8_t DMD_KEY_LEFT = HID_KEY_ARROW_LEFT;
 const uint8_t DMD_KEY_RIGHT = HID_KEY_ARROW_RIGHT;
-const uint8_t DMD_KEY_CENTER = HID_KEY_ENTER;
+const uint8_t DMD_KEY_CENTER = HID_KEY_F8;
 const uint8_t DMD_KEY_A = HID_KEY_F6;
 const uint8_t DMD_KEY_B = HID_KEY_F7;
 const uint8_t DMD_KEY_C = HID_KEY_ENTER;
@@ -147,16 +147,16 @@ bool forceKeyReport = false; // used to force another key report for key up acti
 
 // Digital IO pin mapping (default)
 uint8_t BUTTON_UP = 4;
-uint8_t BUTTON_DOWN = 2;
-uint8_t BUTTON_LEFT = 0;
+uint8_t BUTTON_DOWN = 10;
+uint8_t BUTTON_LEFT = 8;
 uint8_t BUTTON_RIGHT = 3;
-uint8_t BUTTON_CENTER = 1;
+uint8_t BUTTON_CENTER = 9;
 uint8_t BUTTON_A = 5;
 uint8_t BUTTON_B = 6;
 uint8_t BUTTON_C = 7;
-uint8_t RGB_LED_RED = 8;
-uint8_t RGB_LED_BLUE = 9;
-uint8_t RGB_LED_GREEN = 10;
+uint8_t RGB_LED_RED = 0;
+uint8_t RGB_LED_BLUE = 1;
+uint8_t RGB_LED_GREEN = 2;
 
 #define DEBOUNCE_TIME_MS 50
 
@@ -205,6 +205,9 @@ unsigned long button_A_time = 0;
 unsigned long button_B_time = 0;
 unsigned long button_C_time = 0;
 unsigned long button_virtual_time = 0;
+
+// LED brightness 0 - 255 (100% - 0%)
+uint8_t LEDbrightness = 245; // 5%
 /*------------------- END BUTTON CONFIG & LOGIC-----------------------*/
 
 /*
@@ -219,52 +222,52 @@ void setRGBColor(Color color)
   {
   case Red:
     LEDState = Red;
-    digitalWrite(RGB_LED_RED, LOW);
-    digitalWrite(RGB_LED_BLUE, HIGH);
-    digitalWrite(RGB_LED_GREEN, HIGH);
+    analogWrite(RGB_LED_RED, LEDbrightness);
+    analogWrite(RGB_LED_BLUE, 255);
+    analogWrite(RGB_LED_GREEN, 255);
     break;
   case Blue:
     LEDState = Blue;
-    digitalWrite(RGB_LED_RED, HIGH);
-    digitalWrite(RGB_LED_BLUE, LOW);
-    digitalWrite(RGB_LED_GREEN, HIGH);
+    analogWrite(RGB_LED_RED, 255);
+    analogWrite(RGB_LED_BLUE, LEDbrightness);
+    analogWrite(RGB_LED_GREEN, 255);
     break;
   case Green:
     LEDState = Green;
-    digitalWrite(RGB_LED_RED, HIGH);
-    digitalWrite(RGB_LED_BLUE, HIGH);
-    digitalWrite(RGB_LED_GREEN, LOW);
+    analogWrite(RGB_LED_RED, 255);
+    analogWrite(RGB_LED_BLUE, 255);
+    analogWrite(RGB_LED_GREEN, LEDbrightness);
     break;
   case Yellow:
     LEDState = Yellow;
-    digitalWrite(RGB_LED_RED, LOW);
-    digitalWrite(RGB_LED_BLUE, HIGH);
-    digitalWrite(RGB_LED_GREEN, LOW);
+    analogWrite(RGB_LED_RED, LEDbrightness);
+    analogWrite(RGB_LED_BLUE, 255);
+    analogWrite(RGB_LED_GREEN, LEDbrightness);
     break;
   case Cyan:
     LEDState = Cyan;
-    digitalWrite(RGB_LED_RED, HIGH);
-    digitalWrite(RGB_LED_BLUE, LOW);
-    digitalWrite(RGB_LED_GREEN, LOW);
+    analogWrite(RGB_LED_RED, 255);
+    analogWrite(RGB_LED_BLUE, LEDbrightness);
+    analogWrite(RGB_LED_GREEN, LEDbrightness);
     break;
   case Magenta:
     LEDState = Magenta;
-    digitalWrite(RGB_LED_RED, LOW);
-    digitalWrite(RGB_LED_BLUE, LOW);
-    digitalWrite(RGB_LED_GREEN, HIGH);
+    analogWrite(RGB_LED_RED, 245);
+    analogWrite(RGB_LED_BLUE, 245);
+    analogWrite(RGB_LED_GREEN, 255);
     break;
   case White:
     LEDState = White;
-    digitalWrite(RGB_LED_RED, LOW);
-    digitalWrite(RGB_LED_BLUE, LOW);
-    digitalWrite(RGB_LED_GREEN, LOW);
+    analogWrite(RGB_LED_RED, 245);
+    analogWrite(RGB_LED_BLUE, 245);
+    analogWrite(RGB_LED_GREEN, 245);
     break;
   case Off:
   default:
     LEDState = Off;
-    digitalWrite(RGB_LED_RED, HIGH);
-    digitalWrite(RGB_LED_BLUE, HIGH);
-    digitalWrite(RGB_LED_GREEN, HIGH);
+    analogWrite(RGB_LED_RED, 255);
+    analogWrite(RGB_LED_BLUE, 255);
+    analogWrite(RGB_LED_GREEN, 255);
   }
 }
 
@@ -574,15 +577,15 @@ void updateButtons()
   }
 
   /*------------------- Handle mode cycling --------------------------*/
-  // Check for release of mode cycle button combination
-  if (!button_A_state || !button_B_state)
+  // Check for release of mode cycle button
+  if (!button_B_state)
   {
     modeButtonsReleased = true;
   }
 
-  if (button_A_state && button_B_state && (millis() - button_A_time > MODE_TOGGLE_MS) && (millis() - button_B_time > MODE_TOGGLE_MS) && modeButtonsReleased)
+  if (button_B_state && (millis() - button_B_time > MODE_TOGGLE_MS) && modeButtonsReleased)
   {
-    // Buttons A and B were both long-pressed, which means we should advance the mode
+    // Button B was long-pressed, which means we should advance the mode
     currentMode = (Mode)(((int)currentMode + 1) % N_MODES);
     if (DEBUG)
     {
@@ -599,6 +602,23 @@ void updateButtons()
     writeSettings();
 
     indicateMode(currentMode);
+  }
+  /*------------------------------------------------------------------*/
+
+  /*------------------- Changing LED brightness --------------------------*/
+  if (button_A_state && (millis() - button_A_time > MODE_TOGGLE_MS))
+  {
+    // Button A was long-pressed, which means we should change LED brightness
+    LEDbrightness = LEDbrightness - 20;
+    if (LEDbrightness < 1)
+      LEDbrightness = 245;
+    setRGBColor(LEDState); // Reset current LED color with adjusted brightness
+    if (DEBUG)
+    {
+      Serial.print("LED brightness changed to ");
+      Serial.println(LEDbrightness);
+    }
+    delay(200);
   }
   /*------------------------------------------------------------------*/
 }
@@ -640,7 +660,7 @@ void mapButtonsToKeyReport()
       keyReport[i] = DMD_KEY_CENTER;
       ++i;
     }
-    if (!button_A_state & button_A_flipped && !button_B_state)
+    if (!button_A_state && button_A_flipped && !button_B_state)
     {
       button_A_flipped = false;
       forceKeyReport = true;
@@ -1149,8 +1169,13 @@ void loop()
   }
   else if (Bluefruit.connected() == 0)
   {
-    RGBToggle(BLE_COLOR);
+    //RGBToggle(BLE_COLOR);
+    //delay(200);
+    setRGBColor(Off);
     delay(200);
+    setRGBColor(BLE_COLOR);
+    delay(200);
+
     BLE_connected = false;
   }
 
