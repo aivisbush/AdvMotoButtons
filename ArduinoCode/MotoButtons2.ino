@@ -207,7 +207,7 @@ unsigned long button_C_time = 0;
 unsigned long button_virtual_time = 0;
 
 // LED brightness 0 - 255 (100% - 0%)
-uint8_t LEDbrightness = 245; // 5%
+int LEDbrightness = 0;
 /*------------------- END BUTTON CONFIG & LOGIC-----------------------*/
 
 /*
@@ -610,8 +610,8 @@ void updateButtons()
   {
     // Button A was long-pressed, which means we should change LED brightness
     LEDbrightness = LEDbrightness - 20;
-    if (LEDbrightness < 1)
-      LEDbrightness = 245;
+    if (LEDbrightness < 0)
+      LEDbrightness = 255;
     setRGBColor(LEDState); // Reset current LED color with adjusted brightness
     if (DEBUG)
     {
