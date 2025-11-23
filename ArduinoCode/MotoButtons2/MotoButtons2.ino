@@ -47,6 +47,7 @@ typedef enum
   Blue,    // BLE connected (flashing, BLE not connected)
   Green,   // mouse mode
   Yellow,  // DMD2 mode
+  Teal,    // new DMD2 mode
   Cyan,    // MRA mode
   Magenta, // media mode
   White,   // regular key press
@@ -59,7 +60,7 @@ Color LEDState = Off;
 #define VIRT_BUTT_COLOR Red
 #define BLE_COLOR Blue
 #define MOUSE_MODE_COLOR Green
-#define DMD2_MODE_COLOR Yellow
+#define DMD2_MODE_COLOR Blue
 #define MRA_MODE_COLOR Cyan
 #define MEDIA_MODE_COLOR Magenta
 #define KEY_PRESS_COLOR White
@@ -218,56 +219,73 @@ void setRGBColor(Color color)
 {
   priorLEDState = LEDState;
 
+  // convert a "normal" 0..255 channel intensity into the common-anode
+  // analogWrite value, taking LEDbrightness (0..255, 0==full on, 255==off) into account.
+  auto rgbAnalog = [](uint8_t channel)->uint8_t {
+    // brightnessPercent = (255 - LEDbrightness)/255
+    // analog = 255 - channel * brightnessPercent
+    return (uint8_t)(255 - (((uint16_t)channel * (255 - LEDbrightness) + 127) / 255));
+  };
+
   switch (color)
   {
   case Red:
     LEDState = Red;
-    analogWrite(RGB_LED_RED, LEDbrightness);
-    analogWrite(RGB_LED_BLUE, 255);
-    analogWrite(RGB_LED_GREEN, 255);
+    analogWrite(RGB_LED_RED, rgbAnalog(255));
+    analogWrite(RGB_LED_BLUE, rgbAnalog(0));
+    analogWrite(RGB_LED_GREEN, rgbAnalog(0));
     break;
   case Blue:
     LEDState = Blue;
-    analogWrite(RGB_LED_RED, 255);
-    analogWrite(RGB_LED_BLUE, LEDbrightness);
-    analogWrite(RGB_LED_GREEN, 255);
+    analogWrite(RGB_LED_RED, rgbAnalog(0));
+    analogWrite(RGB_LED_BLUE, rgbAnalog(255));
+    analogWrite(RGB_LED_GREEN, rgbAnalog(0));
     break;
   case Green:
     LEDState = Green;
-    analogWrite(RGB_LED_RED, 255);
-    analogWrite(RGB_LED_BLUE, 255);
-    analogWrite(RGB_LED_GREEN, LEDbrightness);
+    analogWrite(RGB_LED_RED, rgbAnalog(0));
+    analogWrite(RGB_LED_BLUE, rgbAnalog(0));
+    analogWrite(RGB_LED_GREEN, rgbAnalog(255));
     break;
   case Yellow:
     LEDState = Yellow;
-    analogWrite(RGB_LED_RED, LEDbrightness);
-    analogWrite(RGB_LED_BLUE, 255);
-    analogWrite(RGB_LED_GREEN, LEDbrightness);
+    analogWrite(RGB_LED_RED, rgbAnalog(255));
+    analogWrite(RGB_LED_BLUE, rgbAnalog(0));
+    analogWrite(RGB_LED_GREEN, rgbAnalog(255));
+    break;
+  case Teal:
+    LEDState = Teal;
+    // Teal ~= (0,128,128)
+    analogWrite(RGB_LED_RED, rgbAnalog(0));
+    analogWrite(RGB_LED_BLUE, rgbAnalog(128));
+    analogWrite(RGB_LED_GREEN, rgbAnalog(128));
     break;
   case Cyan:
     LEDState = Cyan;
-    analogWrite(RGB_LED_RED, 255);
-    analogWrite(RGB_LED_BLUE, LEDbrightness);
-    analogWrite(RGB_LED_GREEN, LEDbrightness);
+    analogWrite(RGB_LED_RED, rgbAnalog(0));
+    analogWrite(RGB_LED_BLUE, rgbAnalog(255));
+    analogWrite(RGB_LED_GREEN, rgbAnalog(255));
     break;
   case Magenta:
     LEDState = Magenta;
-    analogWrite(RGB_LED_RED, 245);
-    analogWrite(RGB_LED_BLUE, 245);
-    analogWrite(RGB_LED_GREEN, 255);
+    // keep existing slight-dim behavior (~245) for magenta
+    analogWrite(RGB_LED_RED, rgbAnalog(245));
+    analogWrite(RGB_LED_BLUE, rgbAnalog(245));
+    analogWrite(RGB_LED_GREEN, rgbAnalog(0));
     break;
   case White:
     LEDState = White;
-    analogWrite(RGB_LED_RED, 245);
-    analogWrite(RGB_LED_BLUE, 245);
-    analogWrite(RGB_LED_GREEN, 245);
+    // keep existing slight-dim behavior (~245) for white
+    analogWrite(RGB_LED_RED, rgbAnalog(245));
+    analogWrite(RGB_LED_BLUE, rgbAnalog(245));
+    analogWrite(RGB_LED_GREEN, rgbAnalog(245));
     break;
   case Off:
   default:
     LEDState = Off;
-    analogWrite(RGB_LED_RED, 255);
-    analogWrite(RGB_LED_BLUE, 255);
-    analogWrite(RGB_LED_GREEN, 255);
+    analogWrite(RGB_LED_RED, rgbAnalog(0));
+    analogWrite(RGB_LED_BLUE, rgbAnalog(0));
+    analogWrite(RGB_LED_GREEN, rgbAnalog(0));
   }
 }
 
@@ -354,9 +372,11 @@ void RGBToggle(Color color)
 // cycle through all colors of the LED for demo purposes
 void colorCycle(uint16_t N)
 {
-  for (uint32_t i = 0; i < N * 7; i++)
+  // updated to reflect new total number of colors (8)
+  const uint8_t COLOR_COUNT = 8;
+  for (uint32_t i = 0; i < N * COLOR_COUNT; i++)
   {
-    setRGBColor((Color)(i % 7));
+    setRGBColor((Color)(i % COLOR_COUNT));
     delay(500);
   }
 }
