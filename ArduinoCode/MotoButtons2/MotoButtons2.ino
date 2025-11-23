@@ -618,6 +618,9 @@ void updateButtons()
       Serial.print("LED brightness changed to ");
       Serial.println(LEDbrightness);
     }
+    // store new mode to flash memory
+    writeSettings();
+    // wait a bit for the next cycle if button still pressed
     delay(200);
   }
   /*------------------------------------------------------------------*/
@@ -945,9 +948,10 @@ void setupDigitalIO()
 
 bool writeSettings()
 {
-  char modeStr[8];
-  char orientationStr[8];
-  char settingsStr[16];
+  char modeStr[2];
+  char orientationStr[2];
+  char brightnessStr[4];
+  char settingsStr[8];
 
   // Settings file does not exist, we need to create it
   if (DEBUG)
@@ -963,9 +967,12 @@ bool writeSettings()
 
     itoa((int)currentMode, modeStr, 10);
     itoa((int)buttonOrientation, orientationStr, 10);
+    itoa((int)LEDbrightness, brightnessStr, 10);
     strcpy(settingsStr, modeStr);
     strcat(settingsStr, ",");
     strcat(settingsStr, orientationStr);
+    strcat(settingsStr, ",");
+    strcat(settingsStr, brightnessStr);
 
     if (DEBUG)
     {
@@ -999,7 +1006,7 @@ bool readSettings()
       Serial.println(FILENAME " settings file exists, reading...");
 
     uint32_t readlen;
-    char buffer[16] = {0};
+    char buffer[8] = {0};
     readlen = file.read(buffer, sizeof(buffer));
 
     buffer[readlen] = 0;
@@ -1016,6 +1023,10 @@ bool readSettings()
     {
       // first value is the app mode
       int n = atoi(token);
+      if (DEBUG) {
+        Serial.print("Saved mode: ");
+        Serial.println(n);
+      }
       if (n < 0 || (n > N_MODES - 1))
       {
         if (DEBUG)
@@ -1024,12 +1035,16 @@ bool readSettings()
         return true; // error
       }
       currentMode = (Mode)n;
-      token = strtok(NULL, " ");
+      token = strtok(NULL, ",");
     }
     if (token)
     {
       // second value is the device orientation
       int n = atoi(token);
+      if (DEBUG) {
+        Serial.print("Saved device orientation: ");
+        Serial.println(n);
+      }
       if (n < 0 || n > 3)
       {
         if (DEBUG)
@@ -1039,6 +1054,25 @@ bool readSettings()
       }
       buttonOrientation = (uint8_t)n;
       setButtonMapping(buttonOrientation);
+      token = strtok(NULL, ",");
+    }
+    if (token)
+    {
+      // third value is the LED brightness
+      int n = atoi(token);
+      if (DEBUG) {
+        Serial.print("Saved LED brightness: ");
+        Serial.println(n);
+      }
+      if (n < 0 || n > 255)
+      {
+        if (DEBUG)
+          Serial.println("Invalid LED brightness value, setting to default.");
+        n = 0;
+        return true; // error
+      }
+      LEDbrightness = (uint8_t)n;
+      setRGBColor(LEDState); // Restore saved LED brightness
     }
 
     return false; // no error
