@@ -344,12 +344,11 @@ void showMode(Mode mode)
 
 void RGBToggle(Color color)
 {
-  bool ledIsOn = !digitalRead(RGB_LED_RED) || !digitalRead(RGB_LED_BLUE) || !digitalRead(RGB_LED_GREEN);
-
-  if (ledIsOn)
-    setRGBColor(Off);
-  else
+  // Treat LED as "on" when a color (not Off) is active.
+  if (LEDState == Off)
     setRGBColor(color);
+  else
+    setRGBColor(Off);
 }
 
 // cycle through all colors of the LED for demo purposes
@@ -1203,11 +1202,7 @@ void loop()
   }
   else if (Bluefruit.connected() == 0)
   {
-    //RGBToggle(BLE_COLOR);
-    //delay(200);
-    setRGBColor(Off);
-    delay(200);
-    setRGBColor(BLE_COLOR);
+    RGBToggle(BLE_COLOR);
     delay(200);
 
     BLE_connected = false;
