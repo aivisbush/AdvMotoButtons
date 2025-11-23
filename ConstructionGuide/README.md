@@ -12,10 +12,10 @@ Prior to assembly, you will need the following hardware to complete construction
 - 22 AWG or finer insulated wire
 - An old USB cable (smaller diameter cable preferred) to provide 5V power to the MCU.
 
-## Wiring Diagram
+## Wiring Diagram (Analog RGB mod by Bush)
 Please print out the [PDF wiring diagram](./Wiring_Diagram_MotoButtons2.pdf) prior to construction.
 
-![MotoButtons 2 Wiring Diagram](./Wiring_Diagram_MotoButtons2.svg)
+![MotoButtons 2 Wiring Diagram](./Wiring_Diagram_MotoButtons2_analog_mod.png)
 
 ## Construction
 Solder up the buttons, joystick, LED and MCU using 22 AWG or finer gauge wire. Find an old USB cable and cut one end off. The red and black (or uninsulated) wires should be the positive (5V) and ground wires, but please check this with a multimeter and USB charger prior to soldering! **Note: The buttons and LED are connected to the 3.3V output on the MCU, NOT the 5V pin!** Connecting the 5V supply to any other pins on the MCU will destroy it. 
