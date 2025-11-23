@@ -12,7 +12,7 @@ Device: Seeed XIAO nRF52840 (MotoButtons 2)
 using namespace Adafruit_LittleFS_Namespace;
 
 // Enable serial debugging (turn this off if not connected to PC)
-#define DEBUG true
+#define DEBUG false
 
 // How long to wait until DFU reset mode is activated
 #define MODE_RESET_MS 10000
@@ -423,41 +423,41 @@ bool setButtonMapping(uint8_t buttMap)
   switch (buttMap)
   {
   case 0: // three buttons on top
-    BUTTON_UP = 2;
+    BUTTON_UP = 10;
     BUTTON_DOWN = 4;
     BUTTON_LEFT = 3;
-    BUTTON_RIGHT = 0;
-    BUTTON_CENTER = 1;
+    BUTTON_RIGHT = 8;
+    BUTTON_CENTER = 9;
     BUTTON_A = 5;
     BUTTON_B = 6;
     BUTTON_C = 7;
     break;
   case 1: // three buttons on left
-    BUTTON_UP = 0;
+    BUTTON_UP = 8;
     BUTTON_DOWN = 3;
-    BUTTON_LEFT = 2;
+    BUTTON_LEFT = 10;
     BUTTON_RIGHT = 4;
-    BUTTON_CENTER = 1;
+    BUTTON_CENTER = 9;
     BUTTON_A = 5;
     BUTTON_B = 6;
     BUTTON_C = 7;
     break;
   case 2: // three buttons on bottom
     BUTTON_UP = 4;
-    BUTTON_DOWN = 2;
-    BUTTON_LEFT = 0;
+    BUTTON_DOWN = 10;
+    BUTTON_LEFT = 8;
     BUTTON_RIGHT = 3;
-    BUTTON_CENTER = 1;
+    BUTTON_CENTER = 9;
     BUTTON_A = 5;
     BUTTON_B = 6;
     BUTTON_C = 7;
     break;
   case 3: // three buttons toward right
     BUTTON_UP = 3;
-    BUTTON_DOWN = 0;
+    BUTTON_DOWN = 8;
     BUTTON_LEFT = 4;
-    BUTTON_RIGHT = 2;
-    BUTTON_CENTER = 1;
+    BUTTON_RIGHT = 10;
+    BUTTON_CENTER = 9;
     BUTTON_A = 5;
     BUTTON_B = 6;
     BUTTON_C = 7;
