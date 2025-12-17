@@ -35,9 +35,9 @@ BLEHidAdafruit blehid;
 
 // BLE configuration
 #define BLE_TX_POWER 8
-const char BLE_DEVICE_NAME[] = "DMD2 CTL 8K";
-const char BLE_DEVICE_MODEL[] = "MotoButtons 2.0";
-const char BLE_MANUFACTURER[] = "Me";
+const char BLE_DEVICE_NAME[] = "Bush Moto BT";
+const char BLE_DEVICE_MODEL[] = "Btns v1.0";
+const char BLE_MANUFACTURER[] = "Bush";
 bool BLE_connected = false;
 
 // RGB LED colors plus off
@@ -641,6 +641,19 @@ void updateButtons()
     writeSettings();
     // wait a bit for the next cycle if button still pressed
     delay(200);
+  }
+  /*------------------------------------------------------------------*/
+
+  /*------------------- Format filesystem --------------------------*/
+  // This is needed because sometimes Bluetooth auto-pairing fails
+  // and seems by formating FS, it works again
+  if (button_A_state && button_B_state && button_C_state && (millis() - button_A_time > MODE_RESET_MS) && (millis() - button_B_time > MODE_RESET_MS) && (millis() - button_C_time > MODE_RESET_MS))
+  {
+    if (DEBUG)
+      Serial.println("Formatting InternalFS...");
+    InternalFS.format();
+    // Indicate formatting done
+    flashLED(Red, 500, 2000);
   }
   /*------------------------------------------------------------------*/
 }
