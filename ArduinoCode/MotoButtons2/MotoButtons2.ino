@@ -19,6 +19,7 @@ using namespace Adafruit_LittleFS_Namespace;
 
 // Orientation of controller
 #define DEFAULT_BUTTON_MAP 3
+#define STARTUP_ORIENTATION_WINDOW_MS 500
 uint8_t buttonOrientation = DEFAULT_BUTTON_MAP;
 
 /*----- Persistent Storage Filesystem -----*/
@@ -151,6 +152,12 @@ uint8_t BUTTON_C = 7;
 uint8_t RGB_LED_RED = 0;
 uint8_t RGB_LED_BLUE = 1;
 uint8_t RGB_LED_GREEN = 2;
+
+// Raw joystick GPIOs used for startup orientation selection.
+const uint8_t JOYSTICK_PIN_UP = 4;
+const uint8_t JOYSTICK_PIN_DOWN = 10;
+const uint8_t JOYSTICK_PIN_LEFT = 8;
+const uint8_t JOYSTICK_PIN_RIGHT = 3;
 
 #define DEBOUNCE_TIME_MS 50
 // state of buttons
@@ -370,29 +377,37 @@ void colorCycle(uint16_t N)
 // -1 indicates no valid selection was made
 int getButtonMapSelection()
 {
-  // Read all four directions because we can only allow a mode switch if
-  // one direction is pressed
-  uint8_t up = digitalRead(BUTTON_UP);
-  uint8_t down = digitalRead(BUTTON_DOWN);
-  uint8_t left = digitalRead(BUTTON_LEFT);
-  uint8_t right = digitalRead(BUTTON_RIGHT);
+  unsigned long startMs = millis();
+  int detectedSelection = -1;
 
-  if (up + down + left + right > 1)
+  while (millis() - startMs < STARTUP_ORIENTATION_WINDOW_MS)
   {
-    // user held down more than one direction, return the default mapping
-    return -1;
+    // Read all four directions because we can only allow a mode switch if
+    // one direction is pressed
+    uint8_t up = digitalRead(JOYSTICK_PIN_UP);
+    uint8_t down = digitalRead(JOYSTICK_PIN_DOWN);
+    uint8_t left = digitalRead(JOYSTICK_PIN_LEFT);
+    uint8_t right = digitalRead(JOYSTICK_PIN_RIGHT);
+
+    if (up + down + left + right > 1)
+      return -1;
+
+    if (up)
+      detectedSelection = 2;
+    else if (down)
+      detectedSelection = 0;
+    else if (left)
+      detectedSelection = 1;
+    else if (right)
+      detectedSelection = 3;
+
+    if (detectedSelection >= 0)
+      return detectedSelection;
+
+    delay(10);
   }
 
-  if (up)
-    return 2;
-  if (down)
-    return 0;
-  if (left)
-    return 1;
-  if (right)
-    return 3;
-
-  // no selection was made
+  // no selection was made during the startup window
   return -1;
 }
 
@@ -968,7 +983,7 @@ bool writeSettings()
   char modeStr[2];
   char orientationStr[2];
   char brightnessStr[4];
-  char settingsStr[8];
+  char settingsStr[16];
 
   // Settings file does not exist, we need to create it
   if (DEBUG)
@@ -985,11 +1000,7 @@ bool writeSettings()
     itoa((int)currentMode, modeStr, 10);
     itoa((int)buttonOrientation, orientationStr, 10);
     itoa((int)LEDbrightness, brightnessStr, 10);
-    strcpy(settingsStr, modeStr);
-    strcat(settingsStr, ",");
-    strcat(settingsStr, orientationStr);
-    strcat(settingsStr, ",");
-    strcat(settingsStr, brightnessStr);
+    snprintf(settingsStr, sizeof(settingsStr), "%s,%s,%s", modeStr, orientationStr, brightnessStr);
 
     if (DEBUG)
     {
@@ -1023,8 +1034,8 @@ bool readSettings()
       Serial.println(FILENAME " settings file exists, reading...");
 
     uint32_t readlen;
-    char buffer[8] = {0};
-    readlen = file.read(buffer, sizeof(buffer));
+    char buffer[16] = {0};
+    readlen = file.read(buffer, sizeof(buffer) - 1);
 
     buffer[readlen] = 0;
     if (DEBUG)
@@ -1113,7 +1124,8 @@ void setup()
   if (DEBUG)
   {
     Serial.begin(115200);
-    while (!Serial)
+    unsigned long serialWaitStart = millis();
+    while (!Serial && (millis() - serialWaitStart < 2000))
       delay(10); // for nrf52840 with native usb
 
     Serial.println("MotoButtons 2 BLE Controller");
