@@ -31,12 +31,31 @@ The device has:
 - 3x buttons and 1x joystick as inputs
 - 1x LED indicator (for understanding what is going on)
 
-Standard button functionality for DMD2 (I do not use other modes, please read the original source):
-- Button A short press or hold - Zoom in (DMD2/OsmAnd)
-- Button B short press or hold - Zoom out (DMD2/OsmAnd)
-- Button C short press or hold - Center (DMD2/OsmAnd)
-- Joystick Up, Down, Left, Right - Move map (DMD2/OsmAnd)
-- Joystick Middle press - Unbound; you can bind it to whatever you want in DMD2
+Standard button functionality by mode:
+
+`DMD2` mode (**NOTE**: bound buttons manually in Settings -> Setup Remote Controller):
+- Button A short press or hold - `F6` / oom in
+- Button B short press or hold - `F7` / zoom out
+- Button C short press or hold - `Enter` / follow toggle (focus)
+- Joystick Up, Down, Left, Right - Arrow keys
+- Joystick Middle press - `F8`
+
+`OsmAnd` mode:
+- Button A short press or hold - `+` / zoom in
+- Button B short press or hold - `-` / zoom out
+- Button C short press or hold - `C` / move to my location (focus)
+- Joystick Up, Down, Left, Right - Arrow keys
+- Joystick Middle press - Unbound
+
+`Media` mode:
+- Button A short press or hold - Play / Pause
+- Button B short press or hold - Screen brightness up
+- Button C short press or hold - Screen brightness down
+- Joystick Up - Volume up
+- Joystick Down - Volume down
+- Joystick Left - Previous track
+- Joystick Right - Next track
+- Joystick Middle press - Mute
 
 Special functions:
 - Hold joystick up button when powering on device, it will select correct orientation
