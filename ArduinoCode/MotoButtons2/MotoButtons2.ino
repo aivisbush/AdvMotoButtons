@@ -18,7 +18,7 @@ using namespace Adafruit_LittleFS_Namespace;
 #define MODE_RESET_MS 5000
 
 // Orientation of controller
-#define DEFAULT_BUTTON_MAP 0
+#define DEFAULT_BUTTON_MAP 3
 uint8_t buttonOrientation = DEFAULT_BUTTON_MAP;
 
 /*----- Persistent Storage Filesystem -----*/
@@ -140,10 +140,10 @@ bool keyReportChanged = false;
 bool forceKeyReport = false; // used to force another key report for key up activation events
 
 // Digital IO pin mapping (default)
-uint8_t BUTTON_UP = 4;
-uint8_t BUTTON_DOWN = 10;
-uint8_t BUTTON_LEFT = 8;
-uint8_t BUTTON_RIGHT = 3;
+uint8_t BUTTON_UP = 3;
+uint8_t BUTTON_DOWN = 8;
+uint8_t BUTTON_LEFT = 4;
+uint8_t BUTTON_RIGHT = 10;
 uint8_t BUTTON_CENTER = 9;
 uint8_t BUTTON_A = 5;
 uint8_t BUTTON_B = 6;
@@ -546,6 +546,8 @@ void updateButtons()
         Serial.println("Formatting InternalFS...");
       InternalFS.format();
       currentMode = DEFAULT_MODE;
+      buttonOrientation = DEFAULT_BUTTON_MAP;
+      setButtonMapping(buttonOrientation);
       writeSettings();
       flashLED(Red, 500, 2000);
       indicateMode(currentMode);
