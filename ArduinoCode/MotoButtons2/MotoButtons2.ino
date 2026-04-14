@@ -88,6 +88,7 @@ Mode currentMode;
 bool modeButtonsReleased = true;
 bool modeComboConsumed = false;
 bool formatComboConsumed = false;
+bool brightnessSettingsDirty = false;
 
 /* DMD2 Mode Configuration */
 // https://www.drivemodedashboard.com/controller-implementation-guide/
@@ -522,6 +523,159 @@ void releaseAllKeys()
   blehid.keyboardReport(0, keyReportRelease);
 }
 
+void applyDefaultSettings()
+{
+  currentMode = DEFAULT_MODE;
+  buttonOrientation = DEFAULT_BUTTON_MAP;
+  LEDbrightness = 0;
+  setButtonMapping(buttonOrientation);
+}
+
+void clearABCButtonFlips()
+{
+  button_A_flipped = false;
+  button_B_flipped = false;
+  button_C_flipped = false;
+}
+
+bool parseUint8Token(const char *token, int minValue, int maxValue, uint8_t *outValue)
+{
+  if (token == NULL)
+    return false;
+
+  char *endPtr = NULL;
+  long parsed = strtol(token, &endPtr, 10);
+  if (endPtr == token || *endPtr != '\0' || parsed < minValue || parsed > maxValue)
+    return false;
+
+  *outValue = (uint8_t)parsed;
+  return true;
+}
+
+bool handleFormatCombo(bool stateChanged)
+{
+  bool formatButtonsPressed = button_A_state && button_B_state && button_C_state;
+  if (!formatButtonsPressed)
+    return false;
+
+  // The filesystem format combo takes priority over all smaller button combos.
+  releaseAllKeys();
+  blehid.mouseButtonRelease();
+  clearABCButtonFlips();
+  modeButtonsReleased = false;
+  modeComboConsumed = false;
+  brightnessAdjustTime = 0;
+  brightnessComboConsumed = false;
+  brightnessSettingsDirty = false;
+  keyReportChanged = stateChanged;
+
+  if (!formatComboConsumed &&
+      (millis() - button_A_time > MODE_RESET_MS) &&
+      (millis() - button_B_time > MODE_RESET_MS) &&
+      (millis() - button_C_time > MODE_RESET_MS))
+  {
+    if (DEBUG)
+      Serial.println("Formatting InternalFS...");
+    InternalFS.format();
+    applyDefaultSettings();
+    writeSettings();
+    flashLED(Red, 500, 2000);
+    indicateMode(currentMode);
+    formatComboConsumed = true;
+  }
+  return true;
+}
+
+bool handleConsumedFormatCombo(bool stateChanged)
+{
+  if (!formatComboConsumed)
+    return false;
+
+  clearABCButtonFlips();
+  keyReportChanged = stateChanged;
+  if (!button_A_state && !button_B_state && !button_C_state)
+    formatComboConsumed = false;
+  return true;
+}
+
+void handleModeCycleCombo()
+{
+  if (!button_B_state || !button_C_state)
+    modeButtonsReleased = true;
+
+  if (button_B_state && button_C_state && !button_A_state &&
+      (millis() - max(button_B_time, button_C_time) > MODE_TOGGLE_MS) &&
+      modeButtonsReleased)
+  {
+    currentMode = (Mode)(((int)currentMode + 1) % N_MODES);
+    if (DEBUG)
+    {
+      Serial.print("Mode advanced to ");
+      Serial.println(currentMode);
+    }
+
+    releaseAllKeys();
+    blehid.mouseButtonRelease();
+    modeButtonsReleased = false;
+    modeComboConsumed = true;
+    button_B_flipped = false;
+    button_C_flipped = false;
+    writeSettings();
+    indicateMode(currentMode);
+  }
+  else if (modeComboConsumed)
+  {
+    button_B_flipped = false;
+    button_C_flipped = false;
+    if (!button_B_state && !button_C_state)
+      modeComboConsumed = false;
+  }
+}
+
+void handleBrightnessCombo()
+{
+  if (button_A_state && button_B_state)
+  {
+    unsigned long brightnessHoldMs = millis() - max(button_A_time, button_B_time);
+    if (brightnessHoldMs > MODE_TOGGLE_MS && (brightnessAdjustTime == 0 || millis() - brightnessAdjustTime >= 200))
+    {
+      LEDbrightness = LEDbrightness - 20;
+      if (LEDbrightness < 0)
+        LEDbrightness = 255;
+      brightnessAdjustTime = millis();
+      brightnessComboConsumed = true;
+      brightnessSettingsDirty = true;
+      button_A_flipped = false;
+      button_B_flipped = false;
+
+      setRGBColor(LEDState);
+      if (DEBUG)
+      {
+        Serial.print("LED brightness changed to ");
+        Serial.println(LEDbrightness);
+      }
+    }
+  }
+  else
+  {
+    brightnessAdjustTime = 0;
+    if (brightnessComboConsumed)
+    {
+      button_A_flipped = false;
+      button_B_flipped = false;
+      if (!button_A_state && !button_B_state)
+      {
+        brightnessComboConsumed = false;
+        if (brightnessSettingsDirty)
+        {
+          writeSettings();
+          brightnessSettingsDirty = false;
+        }
+      }
+    }
+  }
+}
+
 void updateButtons()
 {
   bool stateChanged = false;
@@ -536,51 +690,11 @@ void updateButtons()
   stateChanged |= debounceButton(BUTTON_B, &button_B_state, &button_B_state_prior, &button_B_flipped, &button_B_time, "B");
   stateChanged |= debounceButton(BUTTON_C, &button_C_state, &button_C_state_prior, &button_C_flipped, &button_C_time, "C");
 
-  bool formatButtonsPressed = button_A_state && button_B_state && button_C_state;
-
-  if (formatButtonsPressed)
-  {
-    // The filesystem format combo takes priority over all smaller button combos.
-    releaseAllKeys();
-    blehid.mouseButtonRelease();
-    button_A_flipped = false;
-    button_B_flipped = false;
-    button_C_flipped = false;
-    modeButtonsReleased = false;
-    modeComboConsumed = false;
-    brightnessAdjustTime = 0;
-    brightnessComboConsumed = false;
-    keyReportChanged = stateChanged;
-
-    if (!formatComboConsumed &&
-        (millis() - button_A_time > MODE_RESET_MS) &&
-        (millis() - button_B_time > MODE_RESET_MS) &&
-        (millis() - button_C_time > MODE_RESET_MS))
-    {
-      if (DEBUG)
-        Serial.println("Formatting InternalFS...");
-      InternalFS.format();
-      currentMode = DEFAULT_MODE;
-      buttonOrientation = DEFAULT_BUTTON_MAP;
-      setButtonMapping(buttonOrientation);
-      writeSettings();
-      flashLED(Red, 500, 2000);
-      indicateMode(currentMode);
-      formatComboConsumed = true;
-    }
+  if (handleFormatCombo(stateChanged))
     return;
-  }
 
-  if (formatComboConsumed)
-  {
-    button_A_flipped = false;
-    button_B_flipped = false;
-    button_C_flipped = false;
-    keyReportChanged = stateChanged;
-    if (!button_A_state && !button_B_state && !button_C_state)
-      formatComboConsumed = false;
+  if (handleConsumedFormatCombo(stateChanged))
     return;
-  }
 
   // Indicate whether any buttons changed state
   keyReportChanged = stateChanged;
@@ -597,79 +711,11 @@ void updateButtons()
   }
 
   /*------------------- Handle mode cycling --------------------------*/
-  // Check for release of mode cycle button
-  if (!button_B_state || !button_C_state)
-  {
-    modeButtonsReleased = true;
-  }
-
-  if (button_B_state && button_C_state && !button_A_state && (millis() - max(button_B_time, button_C_time) > MODE_TOGGLE_MS) && modeButtonsReleased)
-  {
-    // Buttons B + C were long-pressed, which means we should advance the mode
-    currentMode = (Mode)(((int)currentMode + 1) % N_MODES);
-    if (DEBUG)
-    {
-      Serial.print("Mode advanced to ");
-      Serial.println(currentMode);
-    }
-
-    // Since mode has been changed, inactivate any ongoing key or mouse presses
-    releaseAllKeys();
-    blehid.mouseButtonRelease();
-    modeButtonsReleased = false;
-    modeComboConsumed = true;
-    button_B_flipped = false;
-    button_C_flipped = false;
-
-    // store new mode to flash memory
-    writeSettings();
-
-    indicateMode(currentMode);
-  }
-  else if (modeComboConsumed)
-  {
-    button_B_flipped = false;
-    button_C_flipped = false;
-    if (!button_B_state && !button_C_state)
-      modeComboConsumed = false;
-  }
+  handleModeCycleCombo();
   /*------------------------------------------------------------------*/
 
   /*------------------- Changing LED brightness --------------------------*/
-  if (button_A_state && button_B_state)
-  {
-    unsigned long brightnessHoldMs = millis() - max(button_A_time, button_B_time);
-    if (brightnessHoldMs > MODE_TOGGLE_MS && (brightnessAdjustTime == 0 || millis() - brightnessAdjustTime >= 200))
-    {
-      // Holding A + B cycles the LED brightness without triggering button actions.
-      LEDbrightness = LEDbrightness - 20;
-      if (LEDbrightness < 0)
-        LEDbrightness = 255;
-      brightnessAdjustTime = millis();
-      brightnessComboConsumed = true;
-      button_A_flipped = false;
-      button_B_flipped = false;
-
-      setRGBColor(LEDState); // Reset current LED color with adjusted brightness
-      if (DEBUG)
-      {
-        Serial.print("LED brightness changed to ");
-        Serial.println(LEDbrightness);
-      }
-      writeSettings();
-    }
-  }
-  else
-  {
-    brightnessAdjustTime = 0;
-    if (brightnessComboConsumed)
-    {
-      button_A_flipped = false;
-      button_B_flipped = false;
-      if (!button_A_state && !button_B_state)
-        brightnessComboConsumed = false;
-    }
-  }
+  handleBrightnessCombo();
   /*------------------------------------------------------------------*/
 }
 
@@ -872,36 +918,41 @@ void mapButtonsToKeyReport()
       blehid.consumerKeyRelease(0);
       ++i;
     }
-    if (!button_A_state && button_A_flipped && !button_B_state)
+    if (button_A_state && !button_B_state && !button_C_state)
     {
       if (DEBUG)
         Serial.println("Media key A");
       button_A_flipped = false;
-      forceKeyReport = true;
       blehid.consumerKeyPress(0, MEDIA_KEY_A);
       blehid.consumerKeyRelease(0);
       ++i;
     }
-    if (!button_B_state && button_B_flipped && !button_A_state && (i < N_KEY_REPORT))
+    else if (!button_A_state && button_A_flipped)
+      button_A_flipped = false;
+
+    if (button_B_state && !button_A_state && !button_C_state && (i < N_KEY_REPORT))
     {
       if (DEBUG)
         Serial.println("Media key B");
       button_B_flipped = false;
-      forceKeyReport = true;
       blehid.consumerKeyPress(0, MEDIA_KEY_B);
       blehid.consumerKeyRelease(0);
       ++i;
     }
-    if (!button_C_state && button_C_flipped && (i < N_KEY_REPORT))
+    else if (!button_B_state && button_B_flipped)
+      button_B_flipped = false;
+
+    if (button_C_state && !button_A_state && !button_B_state && (i < N_KEY_REPORT))
     {
       if (DEBUG)
         Serial.println("Media key C");
       button_C_flipped = false;
-      forceKeyReport = true;
       blehid.consumerKeyPress(0, MEDIA_KEY_C);
       blehid.consumerKeyRelease(0);
       ++i;
     }
+    else if (!button_C_state && button_C_flipped)
+      button_C_flipped = false;
     break;
 
   default:
@@ -1045,63 +1096,60 @@ bool readSettings()
     }
     file.close();
 
-    // split the settings from a common separated list of values to individual variables
-    char *token = strtok(buffer, ",");
-    if (token)
+    char *modeToken = strtok(buffer, ",");
+    char *orientationToken = strtok(NULL, ",");
+    char *brightnessToken = strtok(NULL, ",");
+    char *extraToken = strtok(NULL, ",");
+
+    uint8_t savedMode = 0;
+    uint8_t savedOrientation = 0;
+    uint8_t savedBrightness = 0;
+
+    if (!modeToken || !orientationToken || !brightnessToken || extraToken)
     {
-      // first value is the app mode
-      int n = atoi(token);
-      if (DEBUG) {
-        Serial.print("Saved mode: ");
-        Serial.println(n);
-      }
-      if (n < 0 || (n > N_MODES - 1))
-      {
-        if (DEBUG)
-          Serial.println("Invalid mode value, setting to zero.");
-        n = 0;
-        return true; // error
-      }
-      currentMode = (Mode)n;
-      token = strtok(NULL, ",");
+      if (DEBUG)
+        Serial.println("Settings format invalid, restoring defaults.");
+      applyDefaultSettings();
+      return true;
     }
-    if (token)
+
+    if (!parseUint8Token(modeToken, 0, N_MODES - 1, &savedMode))
     {
-      // second value is the device orientation
-      int n = atoi(token);
-      if (DEBUG) {
-        Serial.print("Saved device orientation: ");
-        Serial.println(n);
-      }
-      if (n < 0 || n > 3)
-      {
-        if (DEBUG)
-          Serial.println("Invalid orientation value, setting to default.");
-        n = DEFAULT_BUTTON_MAP;
-        return true; // error
-      }
-      buttonOrientation = (uint8_t)n;
-      setButtonMapping(buttonOrientation);
-      token = strtok(NULL, ",");
+      if (DEBUG)
+        Serial.println("Invalid mode value, restoring defaults.");
+      applyDefaultSettings();
+      return true;
     }
-    if (token)
+    if (!parseUint8Token(orientationToken, 0, 3, &savedOrientation))
     {
-      // third value is the LED brightness
-      int n = atoi(token);
-      if (DEBUG) {
-        Serial.print("Saved LED brightness: ");
-        Serial.println(n);
-      }
-      if (n < 0 || n > 255)
-      {
-        if (DEBUG)
-          Serial.println("Invalid LED brightness value, setting to default.");
-        n = 0;
-        return true; // error
-      }
-      LEDbrightness = (uint8_t)n;
-      setRGBColor(LEDState); // Restore saved LED brightness
+      if (DEBUG)
+        Serial.println("Invalid orientation value, restoring defaults.");
+      applyDefaultSettings();
+      return true;
     }
+    if (!parseUint8Token(brightnessToken, 0, 255, &savedBrightness))
+    {
+      if (DEBUG)
+        Serial.println("Invalid LED brightness value, restoring defaults.");
+      applyDefaultSettings();
+      return true;
+    }
+
+    if (DEBUG)
+    {
+      Serial.print("Saved mode: ");
+      Serial.println(savedMode);
+      Serial.print("Saved device orientation: ");
+      Serial.println(savedOrientation);
+      Serial.print("Saved LED brightness: ");
+      Serial.println(savedBrightness);
+    }
+
+    currentMode = (Mode)savedMode;
+    buttonOrientation = savedOrientation;
+    LEDbrightness = savedBrightness;
+    setButtonMapping(buttonOrientation);
+    setRGBColor(LEDState);
 
     return false; // no error
   }
@@ -1116,7 +1164,7 @@ bool readSettings()
 
 void setup()
 {
-  currentMode = DEFAULT_MODE;
+  applyDefaultSettings();
 
   setupDigitalIO();
   setRGBColor(POWER_ON_COLOR);
@@ -1174,7 +1222,10 @@ void setup()
     flashLED(BUTTON_ORIENTATION_COLOR, 250, 250 * (((uint8_t)buttonOrientation) + 1));
   }
   else
-    Serial.println("Button orientation not changed.");
+  {
+    if (DEBUG)
+      Serial.println("Button orientation not changed.");
+  }
 
   // Restore settings
   bool success = false;
