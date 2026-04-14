@@ -130,8 +130,8 @@ const uint8_t MEDIA_KEY_LEFT = HID_USAGE_CONSUMER_SCAN_PREVIOUS;     // previous
 const uint8_t MEDIA_KEY_RIGHT = HID_USAGE_CONSUMER_SCAN_NEXT;        // next song
 const uint8_t MEDIA_KEY_CENTER = HID_USAGE_CONSUMER_MUTE;            // Mute
 const uint8_t MEDIA_KEY_A = HID_USAGE_CONSUMER_PLAY_PAUSE;           // play - pause
-const uint8_t MEDIA_KEY_B = HID_USAGE_CONSUMER_STOP;                 // stop music
-const uint8_t MEDIA_KEY_C = HID_USAGE_CONSUMER_BRIGHTNESS_INCREMENT; // increase brightness
+const uint8_t MEDIA_KEY_B = HID_USAGE_CONSUMER_BRIGHTNESS_INCREMENT; // increase brightness
+const uint8_t MEDIA_KEY_C = HID_USAGE_CONSUMER_BRIGHTNESS_DECREMENT; // decrease brightness
 /*---------------------- END MODE CONFIGURATION ----------------------*/
 
 /*----------------- BUTTON CONFIGURATION AND LOGIC -------------------*/
