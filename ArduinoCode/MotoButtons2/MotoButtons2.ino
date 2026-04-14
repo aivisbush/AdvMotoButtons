@@ -12,7 +12,7 @@ Device: Seeed XIAO nRF52840 (MotoButtons 2)
 using namespace Adafruit_LittleFS_Namespace;
 
 // Enable serial debugging (turn this off if not connected to PC)
-#define DEBUG true
+#define DEBUG false
 
 // How long to wait until DFU reset mode is activated
 #define MODE_RESET_MS 5000
