@@ -46,7 +46,7 @@ typedef enum
   Green,   // mouse mode
   Yellow,  // DMD2 mode
   Teal,    // new DMD2 mode
-  Cyan,    // MRA mode
+  Cyan,    // OsmAnd mode
   Magenta, // media mode
   White,   // regular key press
   Off,
@@ -58,7 +58,7 @@ Color LEDState = Off;
 #define BLE_COLOR Blue
 #define MOUSE_MODE_COLOR Green
 #define DMD2_MODE_COLOR Blue
-#define MRA_MODE_COLOR Cyan
+#define OSMAND_MODE_COLOR Cyan
 #define MEDIA_MODE_COLOR Magenta
 #define KEY_PRESS_COLOR White
 #define POWER_ON_COLOR Red
@@ -69,7 +69,7 @@ Color LEDState = Off;
  * --------------------- MODE CONFIGURATION ----------------------------
  * 	DMD2: up/down/left/right arrows, enter, F6 and F7
  * 	Mouse: mouse up/down/left/right, left click, left click, ?
- * 	MyRouteApp: up/down/left/right arrows, 'c', -, +, longpress center for 'n' (hold center for skip waypoint)
+ * 	OsmAnd: up/down/left/right arrows, unbound center, '+', '-', 'c'
  *  Media (music): vol up, vol down, previous track, next track, mute, play/pause, stop
  */
 // Selected Mode: indicates the currently selected operating mode
@@ -79,7 +79,7 @@ typedef enum
 {
   Mouse = 0,
   DMD2 = 1,
-  MRA = 2,
+  OsmAnd = 2,
   MEDIA = 3
 } Mode;
 #define DEFAULT_MODE DMD2
@@ -113,15 +113,15 @@ bool mouse_left_button_pressed = false;
 const uint8_t MOUSE_KEY_A = HID_KEY_BACKSPACE;
 const uint8_t MOUSE_KEY_B = HID_KEY_ENTER;
 
-/* MyRouteApp Mode Configuration */
-const uint8_t MRA_KEY_UP = HID_KEY_ARROW_UP;
-const uint8_t MRA_KEY_DOWN = HID_KEY_ARROW_DOWN;
-const uint8_t MRA_KEY_LEFT = HID_KEY_ARROW_LEFT;
-const uint8_t MRA_KEY_RIGHT = HID_KEY_ARROW_RIGHT;
-const uint8_t MRA_KEY_CENTER = HID_KEY_C;     // operate compass
-const uint8_t MRA_KEY_A = HID_KEY_KEYPAD_ADD; // zoom in
-const uint8_t MRA_KEY_B = HID_KEY_MINUS;      // zoom out
-const uint8_t MRA_KEY_C = HID_KEY_N;          // open menu
+/* OsmAnd Mode Configuration */
+const uint8_t OSMAND_KEY_UP = HID_KEY_ARROW_UP;
+const uint8_t OSMAND_KEY_DOWN = HID_KEY_ARROW_DOWN;
+const uint8_t OSMAND_KEY_LEFT = HID_KEY_ARROW_LEFT;
+const uint8_t OSMAND_KEY_RIGHT = HID_KEY_ARROW_RIGHT;
+const uint8_t OSMAND_KEY_CENTER = HID_KEY_NONE;       // unbound
+const uint8_t OSMAND_KEY_A = HID_KEY_EQUAL;           // zoom in (+ key)
+const uint8_t OSMAND_KEY_B = HID_KEY_MINUS;           // zoom out
+const uint8_t OSMAND_KEY_C = HID_KEY_C;               // move to my location
 
 /* Media Mode Configuration */
 const uint8_t MEDIA_KEY_UP = HID_USAGE_CONSUMER_VOLUME_INCREMENT;    // volume up
@@ -161,6 +161,7 @@ const uint8_t JOYSTICK_PIN_LEFT = 8;
 const uint8_t JOYSTICK_PIN_RIGHT = 3;
 
 #define DEBOUNCE_TIME_MS 50
+#define OSMAND_REPEAT_INTERVAL_MS 250
 // state of buttons
 bool button_up_state = false;
 bool button_down_state = false;
@@ -202,6 +203,7 @@ unsigned long button_C_time = 0;
 int LEDbrightness = 0;
 unsigned long brightnessAdjustTime = 0;
 bool brightnessComboConsumed = false;
+unsigned long lastOsmAndRepeatTime = 0;
 /*------------------- END BUTTON CONFIG & LOGIC-----------------------*/
 
 /*
@@ -318,9 +320,9 @@ void indicateMode(Mode mode)
     flashLED(DMD2_MODE_COLOR, 1000, 200);
     setRGBColor(DMD2_MODE_COLOR);
     break;
-  case MRA:
-    flashLED(MRA_MODE_COLOR, 1000, 200);
-    setRGBColor(MRA_MODE_COLOR);
+  case OsmAnd:
+    flashLED(OSMAND_MODE_COLOR, 1000, 200);
+    setRGBColor(OSMAND_MODE_COLOR);
     break;
   case MEDIA:
     flashLED(MEDIA_MODE_COLOR, 1000, 200);
@@ -342,8 +344,8 @@ void showMode(Mode mode)
   case DMD2:
     setRGBColor(DMD2_MODE_COLOR);
     break;
-  case MRA:
-    setRGBColor(MRA_MODE_COLOR);
+  case OsmAnd:
+    setRGBColor(OSMAND_MODE_COLOR);
     break;
   case MEDIA:
     setRGBColor(MEDIA_MODE_COLOR);
@@ -676,6 +678,16 @@ void handleBrightnessCombo()
   }
 }
 
+bool hasOsmAndRepeatableHold()
+{
+  if (currentMode != OsmAnd)
+    return false;
+
+  return (button_A_state && !button_B_state && !button_C_state) ||
+         (button_B_state && !button_A_state && !button_C_state) ||
+         (button_C_state && !button_A_state && !button_B_state);
+}
+
 void updateButtons()
 {
   bool stateChanged = false;
@@ -802,50 +814,53 @@ void mapButtonsToKeyReport()
       button_B_flipped = false;
     break;
 
-  case MRA:
+  case OsmAnd:
     if (button_up_state && !centerActive)
     {
       if (DEBUG)
-        Serial.println("MRA UP");
-      keyReport[i] = MRA_KEY_UP;
+        Serial.println("OsmAnd UP");
+      keyReport[i] = OSMAND_KEY_UP;
       ++i;
     }
     if (button_down_state && !centerActive)
     {
       if (DEBUG)
-        Serial.println("MRA DOWN");
-      keyReport[i] = MRA_KEY_DOWN;
+        Serial.println("OsmAnd DOWN");
+      keyReport[i] = OSMAND_KEY_DOWN;
       ++i;
     }
     if (button_left_state && !centerActive)
     {
       if (DEBUG)
-        Serial.println("MRA LEFT");
-      keyReport[i] = MRA_KEY_LEFT;
+        Serial.println("OsmAnd LEFT");
+      keyReport[i] = OSMAND_KEY_LEFT;
       ++i;
     }
     if (button_right_state && !centerActive)
     {
       if (DEBUG)
-        Serial.println("MRA RIGHT");
-      keyReport[i] = MRA_KEY_RIGHT;
+        Serial.println("OsmAnd RIGHT");
+      keyReport[i] = OSMAND_KEY_RIGHT;
       ++i;
     }
     if (!button_center_state && button_center_flipped)
     {
-      if (DEBUG)
-        Serial.println("MRA CENTER");
       button_center_flipped = false;
-      forceKeyReport = true;
-      keyReport[i] = MRA_KEY_CENTER;
-      ++i;
+      if (OSMAND_KEY_CENTER != HID_KEY_NONE)
+      {
+        if (DEBUG)
+          Serial.println("OsmAnd CENTER");
+        forceKeyReport = true;
+        keyReport[i] = OSMAND_KEY_CENTER;
+        ++i;
+      }
     }
     if (button_A_state && !button_B_state && !button_C_state)
     {
       if (DEBUG)
-        Serial.println("MRA A");
+        Serial.println("OsmAnd A");
       button_A_flipped = false;
-      keyReport[i] = MRA_KEY_A;
+      keyReport[i] = OSMAND_KEY_A;
       ++i;
     }
     else if (!button_A_state && button_A_flipped)
@@ -854,9 +869,9 @@ void mapButtonsToKeyReport()
     if (button_B_state && !button_A_state && !button_C_state && (i < N_KEY_REPORT))
     {
       if (DEBUG)
-        Serial.println("MRA B");
+        Serial.println("OsmAnd B");
       button_B_flipped = false;
-      keyReport[i] = MRA_KEY_B;
+      keyReport[i] = OSMAND_KEY_B;
       ++i;
     }
     else if (!button_B_state && button_B_flipped)
@@ -865,9 +880,9 @@ void mapButtonsToKeyReport()
     if (button_C_state && !button_A_state && !button_B_state && (i < N_KEY_REPORT))
     {
       if (DEBUG)
-        Serial.println("MRA C");
+        Serial.println("OsmAnd C");
       button_C_flipped = false;
-      keyReport[i] = MRA_KEY_C;
+      keyReport[i] = OSMAND_KEY_C;
       ++i;
     }
     else if (!button_C_state && button_C_flipped)
@@ -1294,9 +1309,21 @@ void loop()
 
   if (BLE_connected)
   {
-    // Compile the BLE HID key report
-    if (keyReportChanged || forceKeyReport)
+    bool osmandRepeatSend = false;
+    if (hasOsmAndRepeatableHold() && !keyReportChanged && !forceKeyReport &&
+        (millis() - lastOsmAndRepeatTime >= OSMAND_REPEAT_INTERVAL_MS))
     {
+      osmandRepeatSend = true;
+    }
+
+    // Compile the BLE HID key report
+    if (keyReportChanged || forceKeyReport || osmandRepeatSend)
+    {
+      if (osmandRepeatSend)
+      {
+        releaseAllKeys();
+        delay(5);
+      }
       if (forceKeyReport) {
         forceKeyReport = false;
         if (DEBUG)
@@ -1304,8 +1331,13 @@ void loop()
       }
       mapButtonsToKeyReport();
       blehid.keyboardReport(0, keyReport);
+      lastOsmAndRepeatTime = millis();
       if (DEBUG)
         Serial.println("Key report sent.");
+    }
+    else if (!hasOsmAndRepeatableHold())
+    {
+      lastOsmAndRepeatTime = millis();
     }
 
     if (currentMode == Mouse)
