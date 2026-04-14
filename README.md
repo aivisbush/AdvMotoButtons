@@ -41,7 +41,7 @@ Standard button functionality for DMD2 (I do not use other modes, please read th
 Special functions:
 - Hold joystick up button when powering on device, it will select correct orientation
 - Button A+B long press - LED brightness changes; hold it until you are satisfied and release
-- Button B+C long press - Mode change: DMD2 (blue) -> OsmAnd (Cyan) -> Media (Magneta) -> Mouse (Green)
+- Button B+C long press - Mode change: DMD2 (blue) -> OsmAnd (Cyan) -> Media (Magneta)
 - Button A+B+C long press (5 secs) - Erase FS. This is a workaround to get BT auto-connect working again
 - Button A+C long press (5 secs) - Enter DFU mode (for programming)
 

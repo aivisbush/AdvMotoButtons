@@ -1,6 +1,6 @@
 /*********************************************************************
 License: GNU GENERAL PUBLIC LICENSE; Version 3, 29 June 2007
-Version: 2.0 with support for the following modes: DMD2, mouse cursor, MyRoute App, media (music)
+Version: 2.0 with support for the following modes: DMD2, OsmAnd, media (music)
 Device: Seeed XIAO nRF52840 (MotoButtons 2)
 *********************************************************************/
 #include <bluefruit.h>
@@ -43,7 +43,7 @@ typedef enum
 {
   Red,
   Blue,    // BLE connected (flashing, BLE not connected)
-  Green,   // mouse mode
+  Green,
   Yellow,  // DMD2 mode
   Teal,    // new DMD2 mode
   Cyan,    // OsmAnd mode
@@ -56,7 +56,6 @@ Color priorLEDState = Off;
 Color LEDState = Off;
 
 #define BLE_COLOR Blue
-#define MOUSE_MODE_COLOR Green
 #define DMD2_MODE_COLOR Blue
 #define OSMAND_MODE_COLOR Cyan
 #define MEDIA_MODE_COLOR Magenta
@@ -68,16 +67,14 @@ Color LEDState = Off;
 /*
  * --------------------- MODE CONFIGURATION ----------------------------
  * 	DMD2: up/down/left/right arrows, enter, F6 and F7
- * 	Mouse: mouse up/down/left/right, left click, left click, ?
  * 	OsmAnd: up/down/left/right arrows, unbound center, '+', '-', 'c'
  *  Media (music): vol up, vol down, previous track, next track, mute, play/pause, stop
  */
 // Selected Mode: indicates the currently selected operating mode
 #define MODE_TOGGLE_MS 1000
-#define N_MODES 4
+#define N_MODES 3
 typedef enum
 {
-  Mouse = 0,
   DMD2 = 1,
   OsmAnd = 2,
   MEDIA = 3
@@ -104,14 +101,6 @@ const uint8_t DMD_KEY_CENTER = HID_KEY_F8;
 const uint8_t DMD_KEY_A = HID_KEY_F6;
 const uint8_t DMD_KEY_B = HID_KEY_F7;
 const uint8_t DMD_KEY_C = HID_KEY_ENTER;
-
-/* Mouse Mode Configuration */
-#define MOUSE_RATE_SLOW 5
-#define MOUSE_RATE_FAST 20
-#define MOUSE_RATE_DELAY 500
-bool mouse_left_button_pressed = false;
-const uint8_t MOUSE_KEY_A = HID_KEY_BACKSPACE;
-const uint8_t MOUSE_KEY_B = HID_KEY_ENTER;
 
 /* OsmAnd Mode Configuration */
 const uint8_t OSMAND_KEY_UP = HID_KEY_ARROW_UP;
@@ -312,10 +301,6 @@ void indicateMode(Mode mode)
   // Indicate the new mode
   switch (mode)
   {
-  case Mouse:
-    flashLED(MOUSE_MODE_COLOR, 1000, 200);
-    setRGBColor(MOUSE_MODE_COLOR);
-    break;
   case DMD2:
     flashLED(DMD2_MODE_COLOR, 1000, 200);
     setRGBColor(DMD2_MODE_COLOR);
@@ -338,9 +323,6 @@ void showMode(Mode mode)
   // Indicate the new mode
   switch (mode)
   {
-  case Mouse:
-    setRGBColor(MOUSE_MODE_COLOR);
-    break;
   case DMD2:
     setRGBColor(DMD2_MODE_COLOR);
     break;
@@ -540,6 +522,20 @@ void clearABCButtonFlips()
   button_C_flipped = false;
 }
 
+Mode getNextMode(Mode mode)
+{
+  switch (mode)
+  {
+  case DMD2:
+    return OsmAnd;
+  case OsmAnd:
+    return MEDIA;
+  case MEDIA:
+  default:
+    return DMD2;
+  }
+}
+
 bool parseUint8Token(const char *token, int minValue, int maxValue, uint8_t *outValue)
 {
   if (token == NULL)
@@ -562,7 +558,6 @@ bool handleFormatCombo(bool stateChanged)
 
   // The filesystem format combo takes priority over all smaller button combos.
   releaseAllKeys();
-  blehid.mouseButtonRelease();
   clearABCButtonFlips();
   modeButtonsReleased = false;
   modeComboConsumed = false;
@@ -609,7 +604,7 @@ void handleModeCycleCombo()
       (millis() - max(button_B_time, button_C_time) > MODE_TOGGLE_MS) &&
       modeButtonsReleased)
   {
-    currentMode = (Mode)(((int)currentMode + 1) % N_MODES);
+    currentMode = getNextMode(currentMode);
     if (DEBUG)
     {
       Serial.print("Mode advanced to ");
@@ -617,7 +612,6 @@ void handleModeCycleCombo()
     }
 
     releaseAllKeys();
-    blehid.mouseButtonRelease();
     modeButtonsReleased = false;
     modeComboConsumed = true;
     button_B_flipped = false;
@@ -794,26 +788,6 @@ void mapButtonsToKeyReport()
       button_C_flipped = false;
     break;
 
-  case Mouse:
-    if (button_A_state && !button_B_state && !button_C_state)
-    {
-      button_A_flipped = false;
-      keyReport[i] = MOUSE_KEY_A;
-      ++i;
-    }
-    else if (!button_A_state && button_A_flipped)
-      button_A_flipped = false;
-
-    if (button_B_state && !button_A_state && !button_C_state)
-    {
-      button_B_flipped = false;
-      keyReport[i] = MOUSE_KEY_B;
-      ++i;
-    }
-    else if (!button_B_state && button_B_flipped)
-      button_B_flipped = false;
-    break;
-
   case OsmAnd:
     if (button_up_state && !centerActive)
     {
@@ -980,54 +954,6 @@ void mapButtonsToKeyReport()
   }
 }
 
-void handleMouse()
-{
-  // handle LEFT click release
-  if ((!button_center_state && button_center_flipped) || (!button_C_state && button_C_flipped) && mouse_left_button_pressed)
-  {
-    if (DEBUG)
-      Serial.print("Mouse left button released.");
-    blehid.mouseButtonRelease();
-    button_center_flipped = false;
-    button_C_flipped = false;
-    mouse_left_button_pressed = false;
-  }
-
-  // Handle LEFT click press
-  if ((button_center_state && button_center_flipped) || (button_C_state && button_C_flipped) && !mouse_left_button_pressed)
-  {
-    if (DEBUG)
-      Serial.print("Mouse left button pressed.");
-    blehid.mouseButtonPress(MOUSE_BUTTON_LEFT);
-    button_center_flipped = false;
-    button_C_flipped = false;
-    mouse_left_button_pressed = true;
-  }
-
-  // Move pointer
-  if (!isCenterActive())
-  {
-    int rate = MOUSE_RATE_SLOW;
-    unsigned long currTimeMs = millis();
-    if (((currTimeMs - button_up_time > MOUSE_RATE_DELAY) && button_up_state) ||
-        ((currTimeMs - button_down_time > MOUSE_RATE_DELAY) && button_down_state) ||
-        ((currTimeMs - button_left_time > MOUSE_RATE_DELAY) && button_left_state) ||
-        ((currTimeMs - button_right_time > MOUSE_RATE_DELAY) && button_right_state))
-      rate = MOUSE_RATE_FAST;
-    else
-      rate = MOUSE_RATE_SLOW;
-
-    if (button_up_state)
-      blehid.mouseMove(0, -rate);
-    if (button_down_state)
-      blehid.mouseMove(0, rate);
-    if (button_left_state)
-      blehid.mouseMove(-rate, 0);
-    if (button_right_state)
-      blehid.mouseMove(rate, 0);
-  }
-}
-
 void setupDigitalIO()
 {
   pinMode(BUTTON_UP, INPUT_PULLDOWN);
@@ -1128,7 +1054,7 @@ bool readSettings()
       return true;
     }
 
-    if (!parseUint8Token(modeToken, 0, N_MODES - 1, &savedMode))
+    if (!parseUint8Token(modeToken, 0, 3, &savedMode))
     {
       if (DEBUG)
         Serial.println("Invalid mode value, restoring defaults.");
@@ -1160,7 +1086,22 @@ bool readSettings()
       Serial.println(savedBrightness);
     }
 
-    currentMode = (Mode)savedMode;
+    switch (savedMode)
+    {
+    case 0:
+    case 1:
+      currentMode = DMD2;
+      break;
+    case 2:
+      currentMode = OsmAnd;
+      break;
+    case 3:
+      currentMode = MEDIA;
+      break;
+    default:
+      applyDefaultSettings();
+      return true;
+    }
     buttonOrientation = savedOrientation;
     LEDbrightness = savedBrightness;
     setButtonMapping(buttonOrientation);
@@ -1262,7 +1203,6 @@ void startBLEAdvertise(void)
   // Advertising packet
   Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
   Bluefruit.Advertising.addTxPower();
-  // Bluefruit.Advertising.addAppearance(BLE_APPEARANCE_HID_MOUSE);
   Bluefruit.Advertising.addAppearance(BLE_APPEARANCE_HID_KEYBOARD);
 
   // Include BLE HID service
@@ -1340,7 +1280,5 @@ void loop()
       lastOsmAndRepeatTime = millis();
     }
 
-    if (currentMode == Mouse)
-      handleMouse();
   }
 }
