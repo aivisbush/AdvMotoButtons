@@ -12,17 +12,14 @@ Device: Seeed XIAO nRF52840 (MotoButtons 2)
 using namespace Adafruit_LittleFS_Namespace;
 
 // Enable serial debugging (turn this off if not connected to PC)
-#define DEBUG false
+#define DEBUG true
 
 // How long to wait until DFU reset mode is activated
-#define MODE_RESET_MS 10000
+#define MODE_RESET_MS 5000
 
 // Orientation of controller
 #define DEFAULT_BUTTON_MAP 0
 uint8_t buttonOrientation = DEFAULT_BUTTON_MAP;
-
-// how long to deactivate physical button after virtual button is released
-#define BUTTON_VIRTUAL_TIMEOUT 500 // ms
 
 /*----- Persistent Storage Filesystem -----*/
 // This is used to store settings, such as the last mode
@@ -35,15 +32,15 @@ BLEHidAdafruit blehid;
 
 // BLE configuration
 #define BLE_TX_POWER 8
-const char BLE_DEVICE_NAME[] = "Bush Moto BT";
-const char BLE_DEVICE_MODEL[] = "Btns v1.0";
+const char BLE_DEVICE_NAME[] = "Bush Moto BT3";
+const char BLE_DEVICE_MODEL[] = "Btns v2.0";
 const char BLE_MANUFACTURER[] = "Bush";
 bool BLE_connected = false;
 
 // RGB LED colors plus off
 typedef enum
 {
-  Red,     // virtual button activated
+  Red,
   Blue,    // BLE connected (flashing, BLE not connected)
   Green,   // mouse mode
   Yellow,  // DMD2 mode
@@ -57,7 +54,6 @@ typedef enum
 Color priorLEDState = Off;
 Color LEDState = Off;
 
-#define VIRT_BUTT_COLOR Red
 #define BLE_COLOR Blue
 #define MOUSE_MODE_COLOR Green
 #define DMD2_MODE_COLOR Blue
@@ -85,12 +81,12 @@ typedef enum
   MRA = 2,
   MEDIA = 3
 } Mode;
+#define DEFAULT_MODE DMD2
 Mode currentMode;
 
 bool modeButtonsReleased = true;
-
-// how long we must hold a physical button before the virtual function is activated
-#define VIRT_BUTT_HOLD_DURATION 1000
+bool modeComboConsumed = false;
+bool formatComboConsumed = false;
 
 /* DMD2 Mode Configuration */
 // https://www.drivemodedashboard.com/controller-implementation-guide/
@@ -106,7 +102,6 @@ const uint8_t DMD_KEY_CENTER = HID_KEY_F8;
 const uint8_t DMD_KEY_A = HID_KEY_F6;
 const uint8_t DMD_KEY_B = HID_KEY_F7;
 const uint8_t DMD_KEY_C = HID_KEY_ENTER;
-const uint8_t DMD_KEY_VIRTUAL = HID_KEY_F5;
 
 /* Mouse Mode Configuration */
 #define MOUSE_RATE_SLOW 5
@@ -125,7 +120,6 @@ const uint8_t MRA_KEY_CENTER = HID_KEY_C;     // operate compass
 const uint8_t MRA_KEY_A = HID_KEY_KEYPAD_ADD; // zoom in
 const uint8_t MRA_KEY_B = HID_KEY_MINUS;      // zoom out
 const uint8_t MRA_KEY_C = HID_KEY_N;          // open menu
-const uint8_t MRA_KEY_VIRTUAL = HID_KEY_D;    // start navigation
 
 /* Media Mode Configuration */
 const uint8_t MEDIA_KEY_UP = HID_USAGE_CONSUMER_VOLUME_INCREMENT;    // volume up
@@ -136,7 +130,6 @@ const uint8_t MEDIA_KEY_CENTER = HID_USAGE_CONSUMER_MUTE;            // Mute
 const uint8_t MEDIA_KEY_A = HID_USAGE_CONSUMER_PLAY_PAUSE;           // play - pause
 const uint8_t MEDIA_KEY_B = HID_USAGE_CONSUMER_STOP;                 // stop music
 const uint8_t MEDIA_KEY_C = HID_USAGE_CONSUMER_BRIGHTNESS_INCREMENT; // increase brightness
-const uint8_t MEDIA_KEY_VIRTUAL = HID_USAGE_CONSUMER_MUTE;           // Mute
 /*---------------------- END MODE CONFIGURATION ----------------------*/
 
 /*----------------- BUTTON CONFIGURATION AND LOGIC -------------------*/
@@ -160,7 +153,6 @@ uint8_t RGB_LED_BLUE = 1;
 uint8_t RGB_LED_GREEN = 2;
 
 #define DEBOUNCE_TIME_MS 50
-
 // state of buttons
 bool button_up_state = false;
 bool button_down_state = false;
@@ -170,8 +162,6 @@ bool button_center_state = false;
 bool button_A_state = false;
 bool button_B_state = false;
 bool button_C_state = false;
-bool button_virtual_state = false; // 8th virtual button activated via long press
-
 // prior state of button reading for debouncing purposes
 bool button_up_state_prior = false;
 bool button_down_state_prior = false;
@@ -191,11 +181,6 @@ bool button_center_flipped = false;
 bool button_A_flipped = false;
 bool button_B_flipped = false;
 bool button_C_flipped = false;
-bool button_virtual_flipped = false;
-
-// a flag to indicate that virtual button was released, for center timeout purposes only
-bool button_virtual_timeout = false;
-
 // last time that button transitioned from low to high
 unsigned long button_up_time = 0;
 unsigned long button_down_time = 0;
@@ -205,10 +190,10 @@ unsigned long button_center_time = 0;
 unsigned long button_A_time = 0;
 unsigned long button_B_time = 0;
 unsigned long button_C_time = 0;
-unsigned long button_virtual_time = 0;
-
 // LED brightness 0 - 255 (100% - 0%)
 int LEDbrightness = 0;
+unsigned long brightnessAdjustTime = 0;
+bool brightnessComboConsumed = false;
 /*------------------- END BUTTON CONFIG & LOGIC-----------------------*/
 
 /*
@@ -481,14 +466,6 @@ bool isCenterActive()
   return false;
 }
 
-bool isVirtualActive()
-{
-  if (millis() - button_virtual_time < BUTTON_VIRTUAL_TIMEOUT)
-    return true;
-
-  return button_virtual_state;
-}
-
 // if  This function should be called rapidly in a loop to update the debounce filter and key state
 //  https://docs.arduino.cc/built-in-examples/digital/Debounce
 bool debounceButton(unsigned int button, bool *state, bool *priorState, bool *buttonFlipped,
@@ -512,6 +489,12 @@ bool debounceButton(unsigned int button, bool *state, bool *priorState, bool *bu
       stateChanged = true;
       *state = reading;
       *buttonFlipped = true;
+      if (DEBUG)
+      {
+        Serial.print("Button ");
+        Serial.print(buttonName);
+        Serial.println(reading ? " pressed" : " released");
+      }
     }
   *priorState = reading;
 
@@ -538,48 +521,49 @@ void updateButtons()
   stateChanged |= debounceButton(BUTTON_B, &button_B_state, &button_B_state_prior, &button_B_flipped, &button_B_time, "B");
   stateChanged |= debounceButton(BUTTON_C, &button_C_state, &button_C_state_prior, &button_C_flipped, &button_C_time, "C");
 
-  /* ----------- Detect state of virtual press for Button C ---------------------*/
-  if (button_C_state && (millis() - button_C_time > VIRT_BUTT_HOLD_DURATION))
+  bool formatButtonsPressed = button_A_state && button_B_state && button_C_state;
+
+  if (formatButtonsPressed)
   {
-    // virtual button activated
-    if (!button_virtual_state)
+    // The filesystem format combo takes priority over all smaller button combos.
+    releaseAllKeys();
+    blehid.mouseButtonRelease();
+    button_A_flipped = false;
+    button_B_flipped = false;
+    button_C_flipped = false;
+    modeButtonsReleased = false;
+    modeComboConsumed = false;
+    brightnessAdjustTime = 0;
+    brightnessComboConsumed = false;
+    keyReportChanged = stateChanged;
+
+    if (!formatComboConsumed &&
+        (millis() - button_A_time > MODE_RESET_MS) &&
+        (millis() - button_B_time > MODE_RESET_MS) &&
+        (millis() - button_C_time > MODE_RESET_MS))
     {
       if (DEBUG)
-        Serial.println("Virtual button C activated.");
-      button_virtual_time = millis();
-      button_virtual_flipped = true;
-      stateChanged |= true;
-
-      // indicate virtual button
-      setRGBColor(VIRT_BUTT_COLOR);
+        Serial.println("Formatting InternalFS...");
+      InternalFS.format();
+      currentMode = DEFAULT_MODE;
+      writeSettings();
+      flashLED(Red, 500, 2000);
+      indicateMode(currentMode);
+      formatComboConsumed = true;
     }
-    button_virtual_state = true;
-  }
-  else if (button_virtual_state)
-  {
-    // virtual button is not active
-    button_virtual_flipped = true;
-    button_virtual_state = false;
-    button_virtual_timeout = true;
-    button_virtual_time = millis();
-    if (DEBUG)
-      Serial.println("Virtual button C deactivated, timeout enabled.");
-    showMode(currentMode);
-    stateChanged |= true;
+    return;
   }
 
-  // Also, a race condition can occur where the virtual button is released and the physical button flips from high to low, activating the physical button
-  // Therefore, the release action of the virtual button is to disable the physical button for a period of time
-  if (button_virtual_timeout)
+  if (formatComboConsumed)
+  {
+    button_A_flipped = false;
+    button_B_flipped = false;
     button_C_flipped = false;
-  if (button_virtual_timeout && (millis() - button_virtual_time > BUTTON_VIRTUAL_TIMEOUT))
-  {
-    button_virtual_timeout = false;
-    if (DEBUG)
-      Serial.println("Virtual button C timeout disabled.");
+    keyReportChanged = stateChanged;
+    if (!button_A_state && !button_B_state && !button_C_state)
+      formatComboConsumed = false;
+    return;
   }
-
-  /*------------------------------------------------------------------*/
 
   // Indicate whether any buttons changed state
   keyReportChanged = stateChanged;
@@ -588,7 +572,7 @@ void updateButtons()
    * This mode is necessary because the bootloader in the Seed nRF52840 has a bug that prevents uploading new software
    * from the Arduino IDE if a BLE sketch is uploaded previously. Thus, it is necessary to enter via triggering a DFU reset event.
    */
-  if (button_A_state && button_B_state && (millis() - button_A_time > MODE_RESET_MS) && (millis() - button_B_time > MODE_RESET_MS))
+  if (button_A_state && button_C_state && !button_B_state && (millis() - button_A_time > MODE_RESET_MS) && (millis() - button_C_time > MODE_RESET_MS))
   {
     if (DEBUG)
       Serial.println("Resetting and entering firmware update (FDU) mode...");
@@ -597,14 +581,14 @@ void updateButtons()
 
   /*------------------- Handle mode cycling --------------------------*/
   // Check for release of mode cycle button
-  if (!button_B_state)
+  if (!button_B_state || !button_C_state)
   {
     modeButtonsReleased = true;
   }
 
-  if (button_B_state && (millis() - button_B_time > MODE_TOGGLE_MS) && modeButtonsReleased)
+  if (button_B_state && button_C_state && !button_A_state && (millis() - max(button_B_time, button_C_time) > MODE_TOGGLE_MS) && modeButtonsReleased)
   {
-    // Button B was long-pressed, which means we should advance the mode
+    // Buttons B + C were long-pressed, which means we should advance the mode
     currentMode = (Mode)(((int)currentMode + 1) % N_MODES);
     if (DEBUG)
     {
@@ -616,44 +600,58 @@ void updateButtons()
     releaseAllKeys();
     blehid.mouseButtonRelease();
     modeButtonsReleased = false;
+    modeComboConsumed = true;
+    button_B_flipped = false;
+    button_C_flipped = false;
 
     // store new mode to flash memory
     writeSettings();
 
     indicateMode(currentMode);
   }
-  /*------------------------------------------------------------------*/
-
-  /*------------------- Changing LED brightness --------------------------*/
-  if (button_A_state && (millis() - button_A_time > MODE_TOGGLE_MS))
+  else if (modeComboConsumed)
   {
-    // Button A was long-pressed, which means we should change LED brightness
-    LEDbrightness = LEDbrightness - 20;
-    if (LEDbrightness < 0)
-      LEDbrightness = 255;
-    setRGBColor(LEDState); // Reset current LED color with adjusted brightness
-    if (DEBUG)
-    {
-      Serial.print("LED brightness changed to ");
-      Serial.println(LEDbrightness);
-    }
-    // store new mode to flash memory
-    writeSettings();
-    // wait a bit for the next cycle if button still pressed
-    delay(200);
+    button_B_flipped = false;
+    button_C_flipped = false;
+    if (!button_B_state && !button_C_state)
+      modeComboConsumed = false;
   }
   /*------------------------------------------------------------------*/
 
-  /*------------------- Format filesystem --------------------------*/
-  // This is needed because sometimes Bluetooth auto-pairing fails
-  // and seems by formating FS, it works again
-  if (button_A_state && button_B_state && button_C_state && (millis() - button_A_time > MODE_RESET_MS) && (millis() - button_B_time > MODE_RESET_MS) && (millis() - button_C_time > MODE_RESET_MS))
+  /*------------------- Changing LED brightness --------------------------*/
+  if (button_A_state && button_B_state)
   {
-    if (DEBUG)
-      Serial.println("Formatting InternalFS...");
-    InternalFS.format();
-    // Indicate formatting done
-    flashLED(Red, 500, 2000);
+    unsigned long brightnessHoldMs = millis() - max(button_A_time, button_B_time);
+    if (brightnessHoldMs > MODE_TOGGLE_MS && (brightnessAdjustTime == 0 || millis() - brightnessAdjustTime >= 200))
+    {
+      // Holding A + B cycles the LED brightness without triggering button actions.
+      LEDbrightness = LEDbrightness - 20;
+      if (LEDbrightness < 0)
+        LEDbrightness = 255;
+      brightnessAdjustTime = millis();
+      brightnessComboConsumed = true;
+      button_A_flipped = false;
+      button_B_flipped = false;
+
+      setRGBColor(LEDState); // Reset current LED color with adjusted brightness
+      if (DEBUG)
+      {
+        Serial.print("LED brightness changed to ");
+        Serial.println(LEDbrightness);
+      }
+      writeSettings();
+    }
+  }
+  else
+  {
+    brightnessAdjustTime = 0;
+    if (brightnessComboConsumed)
+    {
+      button_A_flipped = false;
+      button_B_flipped = false;
+      if (!button_A_state && !button_B_state)
+        brightnessComboConsumed = false;
+    }
   }
   /*------------------------------------------------------------------*/
 }
@@ -663,8 +661,6 @@ void mapButtonsToKeyReport()
   unsigned int i = 0;
 
   bool centerActive = isCenterActive();
-  bool virtualActive = isVirtualActive();
-
   switch (currentMode)
   {
   case DMD2:
@@ -695,52 +691,52 @@ void mapButtonsToKeyReport()
       keyReport[i] = DMD_KEY_CENTER;
       ++i;
     }
-    if (!button_A_state && button_A_flipped && !button_B_state)
+    if (button_A_state && !button_B_state && !button_C_state)
     {
       button_A_flipped = false;
-      forceKeyReport = true;
       keyReport[i] = DMD_KEY_A;
       ++i;
     }
-    if (!button_B_state && button_B_flipped && !button_A_state && (i < N_KEY_REPORT))
+    else if (!button_A_state && button_A_flipped)
+      button_A_flipped = false;
+
+    if (button_B_state && !button_A_state && !button_C_state && (i < N_KEY_REPORT))
     {
       button_B_flipped = false;
-      forceKeyReport = true;
       keyReport[i] = DMD_KEY_B;
       ++i;
     }
-    if (!button_C_state && button_C_flipped && !virtualActive && (i < N_KEY_REPORT))
+    else if (!button_B_state && button_B_flipped)
+      button_B_flipped = false;
+
+    if (button_C_state && !button_A_state && !button_B_state && (i < N_KEY_REPORT))
     {
       button_C_flipped = false;
-      forceKeyReport = true;
       keyReport[i] = DMD_KEY_C;
       ++i;
     }
-    if (!button_virtual_state && (i < N_KEY_REPORT) && button_virtual_flipped)
-    {
-      button_virtual_flipped = false;
-      forceKeyReport = true;
-      keyReport[i] = DMD_KEY_VIRTUAL;
-      ++i;
-    }
+    else if (!button_C_state && button_C_flipped)
+      button_C_flipped = false;
     break;
 
   case Mouse:
-    if (!button_A_state && button_A_flipped)
+    if (button_A_state && !button_B_state && !button_C_state)
     {
       button_A_flipped = false;
-      forceKeyReport = true;
       keyReport[i] = MOUSE_KEY_A;
       ++i;
-      
     }
-    if (!button_B_state && button_B_flipped)
+    else if (!button_A_state && button_A_flipped)
+      button_A_flipped = false;
+
+    if (button_B_state && !button_A_state && !button_C_state)
     {
       button_B_flipped = false;
-      forceKeyReport = true;
       keyReport[i] = MOUSE_KEY_B;
       ++i;
     }
+    else if (!button_B_state && button_B_flipped)
+      button_B_flipped = false;
     break;
 
   case MRA:
@@ -781,42 +777,38 @@ void mapButtonsToKeyReport()
       keyReport[i] = MRA_KEY_CENTER;
       ++i;
     }
-    if (!button_A_state && button_A_flipped && !button_B_state)
+    if (button_A_state && !button_B_state && !button_C_state)
     {
       if (DEBUG)
         Serial.println("MRA A");
       button_A_flipped = false;
-      forceKeyReport = true;
       keyReport[i] = MRA_KEY_A;
       ++i;
     }
-    if (!button_B_state && button_B_flipped && !button_A_state && (i < N_KEY_REPORT))
+    else if (!button_A_state && button_A_flipped)
+      button_A_flipped = false;
+
+    if (button_B_state && !button_A_state && !button_C_state && (i < N_KEY_REPORT))
     {
       if (DEBUG)
         Serial.println("MRA B");
       button_B_flipped = false;
-      forceKeyReport = true;
       keyReport[i] = MRA_KEY_B;
       ++i;
     }
-    if (!button_C_state && button_C_flipped && !virtualActive && (i < N_KEY_REPORT))
+    else if (!button_B_state && button_B_flipped)
+      button_B_flipped = false;
+
+    if (button_C_state && !button_A_state && !button_B_state && (i < N_KEY_REPORT))
     {
       if (DEBUG)
         Serial.println("MRA C");
       button_C_flipped = false;
-      forceKeyReport = true;
       keyReport[i] = MRA_KEY_C;
       ++i;
     }
-    if (!button_virtual_state && (i < N_KEY_REPORT) && button_virtual_flipped)
-    {
-      if (DEBUG)
-        Serial.println("MRA VIRTUAL");
-      button_virtual_flipped = false;
-      forceKeyReport = true;
-      keyReport[i] = MRA_KEY_VIRTUAL;
-      ++i;
-    }
+    else if (!button_C_state && button_C_flipped)
+      button_C_flipped = false;
     break;
 
   case MEDIA:
@@ -883,7 +875,7 @@ void mapButtonsToKeyReport()
       blehid.consumerKeyRelease(0);
       ++i;
     }
-    if (!button_C_state && button_C_flipped && !virtualActive && (i < N_KEY_REPORT))
+    if (!button_C_state && button_C_flipped && (i < N_KEY_REPORT))
     {
       if (DEBUG)
         Serial.println("Media key C");
@@ -891,15 +883,6 @@ void mapButtonsToKeyReport()
       forceKeyReport = true;
       blehid.consumerKeyPress(0, MEDIA_KEY_C);
       blehid.consumerKeyRelease(0);
-      ++i;
-    }
-    if (!button_virtual_state && (i < N_KEY_REPORT) && button_virtual_flipped)
-    {
-      if (DEBUG)
-        Serial.println("Media VIRTUAL");
-      button_virtual_flipped = false;
-      forceKeyReport = true;
-      keyReport[i] = MEDIA_KEY_VIRTUAL;
       ++i;
     }
     break;
@@ -1120,7 +1103,7 @@ bool readSettings()
 
 void setup()
 {
-  currentMode = Mouse;
+  currentMode = DEFAULT_MODE;
 
   setupDigitalIO();
   setRGBColor(POWER_ON_COLOR);

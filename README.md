@@ -32,17 +32,17 @@ The device has:
 - 1x LED indicator (for understanding what is going on)
 
 Standard button functionality for DMD2 (I do not use other modes, please read the original source):
-- Button A short press - Zoom in (DMD2)
-- Button B short press - Zoom out (DMD2)
-- Button C short press - Center (DMD2)
+- Button A short press or hold - Zoom in (DMD2)
+- Button B short press or hold - Zoom out (DMD2)
+- Button C short press or hold - Center (DMD2)
 - Joystick Up, Down, Left, Right - Move map (DMD2)
 - Joystick Middle press - Unbound; you can bind it to whatever you want in DMD2
 
 Special functions:
-- Button A long press - LED brightness changes; hold it until you are satisfied and release
-- Button B long press - Mode change: DMD2, MyRouteApp, Media, Mouse
-- Button A, B and C long press - Erase FS. This is a workaround to get BT auto-connect working again
-- Button A and B long press - Enter DFU mode (for programming)
+- Button A+B long press - LED brightness changes; hold it until you are satisfied and release
+- Button B+C long press - Mode change: DMD2, MyRouteApp, Media, Mouse
+- Button A+B+C long press (5 secs) - Erase FS. This is a workaround to get BT auto-connect working again
+- Button A+C long press (5 secs) - Enter DFU mode (for programming)
 
 
 ## Wiring
