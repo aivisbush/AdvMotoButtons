@@ -43,10 +43,7 @@ typedef enum
 {
   Red,
   Blue,    // BLE connected (flashing, BLE not connected)
-  Green,
-  Yellow,  // DMD2 mode
-  Teal,    // new DMD2 mode
-  Cyan,    // OsmAnd mode
+  Green,   // OsmAnd mode
   Magenta, // media mode
   White,   // regular key press
   Off,
@@ -57,7 +54,7 @@ Color LEDState = Off;
 
 #define BLE_COLOR Blue
 #define DMD2_MODE_COLOR Blue
-#define OSMAND_MODE_COLOR Cyan
+#define OSMAND_MODE_COLOR Green
 #define MEDIA_MODE_COLOR Magenta
 #define KEY_PRESS_COLOR White
 #define POWER_ON_COLOR Red
@@ -231,25 +228,6 @@ void setRGBColor(Color color)
     analogWrite(RGB_LED_BLUE, rgbAnalog(0));
     analogWrite(RGB_LED_GREEN, rgbAnalog(255));
     break;
-  case Yellow:
-    LEDState = Yellow;
-    analogWrite(RGB_LED_RED, rgbAnalog(255));
-    analogWrite(RGB_LED_BLUE, rgbAnalog(0));
-    analogWrite(RGB_LED_GREEN, rgbAnalog(255));
-    break;
-  case Teal:
-    LEDState = Teal;
-    // Teal ~= (0,128,128)
-    analogWrite(RGB_LED_RED, rgbAnalog(0));
-    analogWrite(RGB_LED_BLUE, rgbAnalog(128));
-    analogWrite(RGB_LED_GREEN, rgbAnalog(128));
-    break;
-  case Cyan:
-    LEDState = Cyan;
-    analogWrite(RGB_LED_RED, rgbAnalog(0));
-    analogWrite(RGB_LED_BLUE, rgbAnalog(255));
-    analogWrite(RGB_LED_GREEN, rgbAnalog(255));
-    break;
   case Magenta:
     LEDState = Magenta;
     // keep existing slight-dim behavior (~245) for magenta
@@ -349,8 +327,7 @@ void RGBToggle(Color color)
 // cycle through all colors of the LED for demo purposes
 void colorCycle(uint16_t N)
 {
-  // updated to reflect new total number of colors (8)
-  const uint8_t COLOR_COUNT = 8;
+  const uint8_t COLOR_COUNT = 6;
   for (uint32_t i = 0; i < N * COLOR_COUNT; i++)
   {
     setRGBColor((Color)(i % COLOR_COUNT));
