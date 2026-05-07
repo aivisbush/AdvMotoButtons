@@ -1,20 +1,16 @@
 /*********************************************************************
 License: GNU GENERAL PUBLIC LICENSE; Version 3, 29 June 2007
 Version: 2.0 with support for the following modes: DMD2, OsmAnd, media (music)
-Device: Seeed XIAO nRF52840 (MotoButtons 2)
+Device: Seeed XIAO ESP32-C6 (MotoButtons 2)
 *********************************************************************/
-#include <bluefruit.h>
-#include <Adafruit_LittleFS.h>
-#include <InternalFileSystem.h>
-#include <Adafruit_TinyUSB.h>
+#include <HijelHID_BLEKeyboard.h>
+#include <Preferences.h>
 #include <stdlib.h>
-
-using namespace Adafruit_LittleFS_Namespace;
 
 // Enable serial debugging (turn this off if not connected to PC)
 #define DEBUG false
 
-// How long to wait until DFU reset mode is activated
+// How long to wait until the reset combo is activated
 #define MODE_RESET_MS 5000
 
 // Orientation of controller
@@ -22,21 +18,20 @@ using namespace Adafruit_LittleFS_Namespace;
 #define STARTUP_ORIENTATION_WINDOW_MS 500
 uint8_t buttonOrientation = DEFAULT_BUTTON_MAP;
 
-/*----- Persistent Storage Filesystem -----*/
-// This is used to store settings, such as the last mode
-#define FILENAME "/MotoButtons.set"
-File file(InternalFS);
-
-// BLE classes
-BLEDis bledis;
-BLEHidAdafruit blehid;
+/*----- Persistent Storage -----*/
+// This is used to store settings, such as the last mode.
+Preferences preferences;
+const char SETTINGS_NAMESPACE[] = "MotoButtons";
 
 // BLE configuration
 #define BLE_TX_POWER 8
-const char BLE_DEVICE_NAME[] = "Bush Moto BT3";
+const char BLE_DEVICE_NAME[] = "Bush Moto BT7";
 const char BLE_DEVICE_MODEL[] = "Btns v2.0";
 const char BLE_MANUFACTURER[] = "Bush";
 bool BLE_connected = false;
+
+// BLE classes
+HijelHID_BLEKeyboard bleKeyboard(BLE_DEVICE_NAME, BLE_MANUFACTURER, 100);
 
 // RGB LED colors plus off
 typedef enum
@@ -86,65 +81,64 @@ bool brightnessSettingsDirty = false;
 
 /* DMD2 Mode Configuration */
 // https://www.drivemodedashboard.com/controller-implementation-guide/
-// https://arduino.stackexchange.com/questions/65513/how-do-i-send-non-ascii-keys-over-the-ble-hid-connection-using-an-adafruit-nrf52
-// https://github.com/adafruit/Adafruit_nRF52_Arduino/blob/200b3aaefb3256ac26df82ebc9b5b58923d9c37c/cores/nRF5/Adafruit_TinyUSB_Core/tinyusb/src/class/hid/hid.h#L188
-// https://github.com/adafruit/Adafruit_nRF52_Arduino/issues/785
 // Key codes to send for button presses:
-const uint8_t DMD_KEY_UP = HID_KEY_ARROW_UP;
-const uint8_t DMD_KEY_DOWN = HID_KEY_ARROW_DOWN;
-const uint8_t DMD_KEY_LEFT = HID_KEY_ARROW_LEFT;
-const uint8_t DMD_KEY_RIGHT = HID_KEY_ARROW_RIGHT;
-const uint8_t DMD_KEY_CENTER = HID_KEY_F8;
-const uint8_t DMD_KEY_A = HID_KEY_F6;
-const uint8_t DMD_KEY_B = HID_KEY_F7;
-const uint8_t DMD_KEY_C = HID_KEY_ENTER;
+const uint8_t DMD_KEY_UP = KEY_UP;
+const uint8_t DMD_KEY_DOWN = KEY_DOWN;
+const uint8_t DMD_KEY_LEFT = KEY_LEFT;
+const uint8_t DMD_KEY_RIGHT = KEY_RIGHT;
+const uint8_t DMD_KEY_CENTER = KEY_F8;
+const uint8_t DMD_KEY_A = KEY_F6;
+const uint8_t DMD_KEY_B = KEY_F7;
+const uint8_t DMD_KEY_C = KEY_RETURN;
 
 /* OsmAnd Mode Configuration */
-const uint8_t OSMAND_KEY_UP = HID_KEY_ARROW_UP;
-const uint8_t OSMAND_KEY_DOWN = HID_KEY_ARROW_DOWN;
-const uint8_t OSMAND_KEY_LEFT = HID_KEY_ARROW_LEFT;
-const uint8_t OSMAND_KEY_RIGHT = HID_KEY_ARROW_RIGHT;
-const uint8_t OSMAND_KEY_CENTER = HID_KEY_NONE;       // unbound
-const uint8_t OSMAND_KEY_A = HID_KEY_EQUAL;           // zoom in (+ key)
-const uint8_t OSMAND_KEY_B = HID_KEY_MINUS;           // zoom out
-const uint8_t OSMAND_KEY_C = HID_KEY_C;               // move to my location
+const uint8_t OSMAND_KEY_UP = KEY_UP;
+const uint8_t OSMAND_KEY_DOWN = KEY_DOWN;
+const uint8_t OSMAND_KEY_LEFT = KEY_LEFT;
+const uint8_t OSMAND_KEY_RIGHT = KEY_RIGHT;
+const uint8_t OSMAND_KEY_CENTER = KEY_NONE;           // unbound
+const uint8_t OSMAND_KEY_A = KEY_EQUAL;               // zoom in (+ key)
+const uint8_t OSMAND_KEY_B = KEY_MINUS;               // zoom out
+const uint8_t OSMAND_KEY_C = KEY_C;                   // move to my location
 
 /* Media Mode Configuration */
-const uint8_t MEDIA_KEY_UP = HID_USAGE_CONSUMER_VOLUME_INCREMENT;    // volume up
-const uint8_t MEDIA_KEY_DOWN = HID_USAGE_CONSUMER_VOLUME_DECREMENT;  // volume down
-const uint8_t MEDIA_KEY_LEFT = HID_USAGE_CONSUMER_SCAN_PREVIOUS;     // previous song
-const uint8_t MEDIA_KEY_RIGHT = HID_USAGE_CONSUMER_SCAN_NEXT;        // next song
-const uint8_t MEDIA_KEY_CENTER = HID_USAGE_CONSUMER_MUTE;            // Mute
-const uint8_t MEDIA_KEY_A = HID_USAGE_CONSUMER_PLAY_PAUSE;           // play - pause
-const uint8_t MEDIA_KEY_B = HID_USAGE_CONSUMER_BRIGHTNESS_INCREMENT; // increase brightness
-const uint8_t MEDIA_KEY_C = HID_USAGE_CONSUMER_BRIGHTNESS_DECREMENT; // decrease brightness
+const uint16_t MEDIA_KEY_UP = MEDIA_VOLUME_UP;        // volume up
+const uint16_t MEDIA_KEY_DOWN = MEDIA_VOLUME_DOWN;    // volume down
+const uint16_t MEDIA_KEY_LEFT = MEDIA_PREV_TRACK;     // previous song
+const uint16_t MEDIA_KEY_RIGHT = MEDIA_NEXT_TRACK;    // next song
+const uint16_t MEDIA_KEY_CENTER = MEDIA_MUTE;         // Mute
+const uint16_t MEDIA_KEY_A = MEDIA_PLAY_PAUSE;        // play - pause
+const uint16_t MEDIA_KEY_B = MEDIA_BRIGHTNESS_UP;     // increase brightness
+const uint16_t MEDIA_KEY_C = MEDIA_BRIGHTNESS_DOWN;   // decrease brightness
 /*---------------------- END MODE CONFIGURATION ----------------------*/
 
 /*----------------- BUTTON CONFIGURATION AND LOGIC -------------------*/
 /* BLE key report */
 #define N_KEY_REPORT 6
-uint8_t keyReport[N_KEY_REPORT] = {HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE};
+uint8_t keyReport[N_KEY_REPORT] = {KEY_NONE, KEY_NONE, KEY_NONE, KEY_NONE, KEY_NONE, KEY_NONE};
 bool keyReportChanged = false;
 bool forceKeyReport = false; // used to force another key report for key up activation events
 
 // Digital IO pin mapping (default)
-uint8_t BUTTON_UP = 3;
-uint8_t BUTTON_DOWN = 8;
-uint8_t BUTTON_LEFT = 4;
-uint8_t BUTTON_RIGHT = 10;
-uint8_t BUTTON_CENTER = 9;
-uint8_t BUTTON_A = 5;
-uint8_t BUTTON_B = 6;
-uint8_t BUTTON_C = 7;
-uint8_t RGB_LED_RED = 0;
-uint8_t RGB_LED_BLUE = 1;
-uint8_t RGB_LED_GREEN = 2;
+uint8_t BUTTON_UP = D3;
+uint8_t BUTTON_DOWN = D8;
+uint8_t BUTTON_LEFT = D4;
+uint8_t BUTTON_RIGHT = D10;
+uint8_t BUTTON_CENTER = D9;
+uint8_t BUTTON_A = D5;
+uint8_t BUTTON_B = D6;
+uint8_t BUTTON_C = D7;
+uint8_t RGB_LED_RED = D0;
+uint8_t RGB_LED_BLUE = D1;
+uint8_t RGB_LED_GREEN = D2;
+#define USER_LED_PIN LED_BUILTIN
+#define USER_LED_ACTIVE_LOW true
 
 // Raw joystick GPIOs used for startup orientation selection.
-const uint8_t JOYSTICK_PIN_UP = 4;
-const uint8_t JOYSTICK_PIN_DOWN = 10;
-const uint8_t JOYSTICK_PIN_LEFT = 8;
-const uint8_t JOYSTICK_PIN_RIGHT = 3;
+const uint8_t JOYSTICK_PIN_UP = D4;
+const uint8_t JOYSTICK_PIN_DOWN = D10;
+const uint8_t JOYSTICK_PIN_LEFT = D8;
+const uint8_t JOYSTICK_PIN_RIGHT = D3;
 
 #define DEBOUNCE_TIME_MS 50
 #define OSMAND_REPEAT_INTERVAL_MS 250
@@ -191,6 +185,11 @@ unsigned long brightnessAdjustTime = 0;
 bool brightnessComboConsumed = false;
 unsigned long lastOsmAndRepeatTime = 0;
 /*------------------- END BUTTON CONFIG & LOGIC-----------------------*/
+
+void setUserLED(bool on)
+{
+  digitalWrite(USER_LED_PIN, (USER_LED_ACTIVE_LOW ? !on : on) ? HIGH : LOW);
+}
 
 /*
   Set the color of the RGB LED to one of the 7 possibilities, plus off
@@ -249,6 +248,8 @@ void setRGBColor(Color color)
     analogWrite(RGB_LED_BLUE, rgbAnalog(0));
     analogWrite(RGB_LED_GREEN, rgbAnalog(0));
   }
+
+  setUserLED(LEDState != Off && LEDbrightness < 255);
 }
 
 void flashLED(Color color, uint16_t delayMs, uint16_t durationMs)
@@ -385,44 +386,44 @@ bool setButtonMapping(uint8_t buttMap)
   switch (buttMap)
   {
   case 0: // three buttons on top
-    BUTTON_UP = 10;
-    BUTTON_DOWN = 4;
-    BUTTON_LEFT = 3;
-    BUTTON_RIGHT = 8;
-    BUTTON_CENTER = 9;
-    BUTTON_A = 5;
-    BUTTON_B = 6;
-    BUTTON_C = 7;
+    BUTTON_UP = D10;
+    BUTTON_DOWN = D4;
+    BUTTON_LEFT = D3;
+    BUTTON_RIGHT = D8;
+    BUTTON_CENTER = D9;
+    BUTTON_A = D5;
+    BUTTON_B = D6;
+    BUTTON_C = D7;
     break;
   case 1: // three buttons on left
-    BUTTON_UP = 8;
-    BUTTON_DOWN = 3;
-    BUTTON_LEFT = 10;
-    BUTTON_RIGHT = 4;
-    BUTTON_CENTER = 9;
-    BUTTON_A = 5;
-    BUTTON_B = 6;
-    BUTTON_C = 7;
+    BUTTON_UP = D8;
+    BUTTON_DOWN = D3;
+    BUTTON_LEFT = D10;
+    BUTTON_RIGHT = D4;
+    BUTTON_CENTER = D9;
+    BUTTON_A = D5;
+    BUTTON_B = D6;
+    BUTTON_C = D7;
     break;
   case 2: // three buttons on bottom
-    BUTTON_UP = 4;
-    BUTTON_DOWN = 10;
-    BUTTON_LEFT = 8;
-    BUTTON_RIGHT = 3;
-    BUTTON_CENTER = 9;
-    BUTTON_A = 5;
-    BUTTON_B = 6;
-    BUTTON_C = 7;
+    BUTTON_UP = D4;
+    BUTTON_DOWN = D10;
+    BUTTON_LEFT = D8;
+    BUTTON_RIGHT = D3;
+    BUTTON_CENTER = D9;
+    BUTTON_A = D5;
+    BUTTON_B = D6;
+    BUTTON_C = D7;
     break;
   case 3: // three buttons toward right
-    BUTTON_UP = 3;
-    BUTTON_DOWN = 8;
-    BUTTON_LEFT = 4;
-    BUTTON_RIGHT = 10;
-    BUTTON_CENTER = 9;
-    BUTTON_A = 5;
-    BUTTON_B = 6;
-    BUTTON_C = 7;
+    BUTTON_UP = D3;
+    BUTTON_DOWN = D8;
+    BUTTON_LEFT = D4;
+    BUTTON_RIGHT = D10;
+    BUTTON_CENTER = D9;
+    BUTTON_A = D5;
+    BUTTON_B = D6;
+    BUTTON_C = D7;
     break;
   default:
     return true;
@@ -480,8 +481,17 @@ bool debounceButton(unsigned int button, bool *state, bool *priorState, bool *bu
 
 void releaseAllKeys()
 {
-  uint8_t keyReportRelease[N_KEY_REPORT] = {HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE};
-  blehid.keyboardReport(0, keyReportRelease);
+  bleKeyboard.releaseAll();
+}
+
+void sendKeyboardReport()
+{
+  bleKeyboard.releaseAll();
+  for (uint8_t i = 0; i < N_KEY_REPORT; i++)
+  {
+    if (keyReport[i] != KEY_NONE)
+      bleKeyboard.press(keyReport[i]);
+  }
 }
 
 void applyDefaultSettings()
@@ -549,8 +559,10 @@ bool handleFormatCombo(bool stateChanged)
       (millis() - button_C_time > MODE_RESET_MS))
   {
     if (DEBUG)
-      Serial.println("Formatting InternalFS...");
-    InternalFS.format();
+      Serial.println("Clearing saved settings...");
+    preferences.begin(SETTINGS_NAMESPACE, false);
+    preferences.clear();
+    preferences.end();
     applyDefaultSettings();
     writeSettings();
     flashLED(Red, 500, 2000);
@@ -682,15 +694,15 @@ void updateButtons()
   // Indicate whether any buttons changed state
   keyReportChanged = stateChanged;
 
-  /* Hard reset and enter firmware udpate mode (DFU)
-   * This mode is necessary because the bootloader in the Seed nRF52840 has a bug that prevents uploading new software
-   * from the Arduino IDE if a BLE sketch is uploaded previously. Thus, it is necessary to enter via triggering a DFU reset event.
+  /* Hard reset.
+   * ESP32-C6 upload mode is handled by the ESP32 bootloader/Arduino IDE,
+   * so this combo now performs a normal software restart.
    */
   if (button_A_state && button_C_state && !button_B_state && (millis() - button_A_time > MODE_RESET_MS) && (millis() - button_C_time > MODE_RESET_MS))
   {
     if (DEBUG)
-      Serial.println("Resetting and entering firmware update (FDU) mode...");
-    enterSerialDfu();
+      Serial.println("Restarting...");
+    ESP.restart();
   }
 
   /*------------------- Handle mode cycling --------------------------*/
@@ -797,7 +809,7 @@ void mapButtonsToKeyReport()
     if (!button_center_state && button_center_flipped)
     {
       button_center_flipped = false;
-      if (OSMAND_KEY_CENTER != HID_KEY_NONE)
+      if (OSMAND_KEY_CENTER != KEY_NONE)
       {
         if (DEBUG)
           Serial.println("OsmAnd CENTER");
@@ -846,32 +858,28 @@ void mapButtonsToKeyReport()
     {
       if (DEBUG)
         Serial.println("Media key UP");
-      blehid.consumerKeyPress(0, MEDIA_KEY_UP);
-      blehid.consumerKeyRelease(0);
+      bleKeyboard.tap(MEDIA_KEY_UP);
       ++i;
     }
     if (button_down_state && !centerActive)
     {
       if (DEBUG)
         Serial.println("Media key DOWN");
-      blehid.consumerKeyPress(0, MEDIA_KEY_DOWN);
-      blehid.consumerKeyRelease(0);
+      bleKeyboard.tap(MEDIA_KEY_DOWN);
       ++i;
     }
     if (button_left_state && !centerActive)
     {
       if (DEBUG)
         Serial.println("Media key LEFT");
-      blehid.consumerKeyPress(0, MEDIA_KEY_LEFT);
-      blehid.consumerKeyRelease(0);
+      bleKeyboard.tap(MEDIA_KEY_LEFT);
       ++i;
     }
     if (button_right_state && !centerActive)
     {
       if (DEBUG)
         Serial.println("Media key RIGHT");
-      blehid.consumerKeyPress(0, MEDIA_KEY_RIGHT);
-      blehid.consumerKeyRelease(0);
+      bleKeyboard.tap(MEDIA_KEY_RIGHT);
       ++i;
     }
     if (!button_center_state && button_center_flipped)
@@ -880,8 +888,7 @@ void mapButtonsToKeyReport()
         Serial.println("Media key CENTER");
       button_center_flipped = false;
       forceKeyReport = true;
-      blehid.consumerKeyPress(0, MEDIA_KEY_CENTER);
-      blehid.consumerKeyRelease(0);
+      bleKeyboard.tap(MEDIA_KEY_CENTER);
       ++i;
     }
     if (button_A_state && !button_B_state && !button_C_state)
@@ -889,8 +896,7 @@ void mapButtonsToKeyReport()
       if (DEBUG)
         Serial.println("Media key A");
       button_A_flipped = false;
-      blehid.consumerKeyPress(0, MEDIA_KEY_A);
-      blehid.consumerKeyRelease(0);
+      bleKeyboard.tap(MEDIA_KEY_A);
       ++i;
     }
     else if (!button_A_state && button_A_flipped)
@@ -901,8 +907,7 @@ void mapButtonsToKeyReport()
       if (DEBUG)
         Serial.println("Media key B");
       button_B_flipped = false;
-      blehid.consumerKeyPress(0, MEDIA_KEY_B);
-      blehid.consumerKeyRelease(0);
+      bleKeyboard.tap(MEDIA_KEY_B);
       ++i;
     }
     else if (!button_B_state && button_B_flipped)
@@ -913,8 +918,7 @@ void mapButtonsToKeyReport()
       if (DEBUG)
         Serial.println("Media key C");
       button_C_flipped = false;
-      blehid.consumerKeyPress(0, MEDIA_KEY_C);
-      blehid.consumerKeyRelease(0);
+      bleKeyboard.tap(MEDIA_KEY_C);
       ++i;
     }
     else if (!button_C_state && button_C_flipped)
@@ -927,7 +931,7 @@ void mapButtonsToKeyReport()
 
   for (unsigned int j = i; j < N_KEY_REPORT; j++)
   {
-    keyReport[j] = HID_KEY_NONE;
+    keyReport[j] = KEY_NONE;
   }
 }
 
@@ -945,48 +949,27 @@ void setupDigitalIO()
   pinMode(RGB_LED_RED, OUTPUT);
   pinMode(RGB_LED_BLUE, OUTPUT);
   pinMode(RGB_LED_GREEN, OUTPUT);
+  pinMode(USER_LED_PIN, OUTPUT);
+  setUserLED(false);
 }
 
 bool writeSettings()
 {
-  char modeStr[2];
-  char orientationStr[2];
-  char brightnessStr[4];
-  char settingsStr[16];
-
-  // Settings file does not exist, we need to create it
   if (DEBUG)
-    Serial.print("Creating " FILENAME " to store settings...");
+    Serial.println("Writing settings to NVS...");
 
-  if (file.open(FILENAME, FILE_O_WRITE))
+  if (preferences.begin(SETTINGS_NAMESPACE, false))
   {
-    if (DEBUG)
-      Serial.println("File opened successfully.");
-    // file is opened in append mode by default
-    file.truncate(0);
-    file.seek(0);
-
-    itoa((int)currentMode, modeStr, 10);
-    itoa((int)buttonOrientation, orientationStr, 10);
-    itoa((int)LEDbrightness, brightnessStr, 10);
-    snprintf(settingsStr, sizeof(settingsStr), "%s,%s,%s", modeStr, orientationStr, brightnessStr);
-
-    if (DEBUG)
-    {
-      Serial.print("Writing to settings file: ");
-      Serial.println(settingsStr);
-    }
-
-    file.write(settingsStr, strlen(settingsStr));
-    file.close();
-
+    preferences.putUChar("mode", (uint8_t)currentMode);
+    preferences.putUChar("orient", buttonOrientation);
+    preferences.putUChar("bright", (uint8_t)LEDbrightness);
+    preferences.end();
     return true;
   }
   else
   {
     if (DEBUG)
-      Serial.println("Error writing settings file!");
-
+      Serial.println("Error opening NVS for writing!");
     return false;
   }
 }
@@ -994,105 +977,67 @@ bool writeSettings()
 // return true for error
 bool readSettings()
 {
-  file.open(FILENAME, FILE_O_READ);
-  // Does settings file already exist?
-  if (file)
-  {
-    // File already exists
-    if (DEBUG)
-      Serial.println(FILENAME " settings file exists, reading...");
-
-    uint32_t readlen;
-    char buffer[16] = {0};
-    readlen = file.read(buffer, sizeof(buffer) - 1);
-
-    buffer[readlen] = 0;
-    if (DEBUG)
-    {
-      Serial.print("Read from settings: ");
-      Serial.println(buffer);
-    }
-    file.close();
-
-    char *modeToken = strtok(buffer, ",");
-    char *orientationToken = strtok(NULL, ",");
-    char *brightnessToken = strtok(NULL, ",");
-    char *extraToken = strtok(NULL, ",");
-
-    uint8_t savedMode = 0;
-    uint8_t savedOrientation = 0;
-    uint8_t savedBrightness = 0;
-
-    if (!modeToken || !orientationToken || !brightnessToken || extraToken)
-    {
-      if (DEBUG)
-        Serial.println("Settings format invalid, restoring defaults.");
-      applyDefaultSettings();
-      return true;
-    }
-
-    if (!parseUint8Token(modeToken, 0, 3, &savedMode))
-    {
-      if (DEBUG)
-        Serial.println("Invalid mode value, restoring defaults.");
-      applyDefaultSettings();
-      return true;
-    }
-    if (!parseUint8Token(orientationToken, 0, 3, &savedOrientation))
-    {
-      if (DEBUG)
-        Serial.println("Invalid orientation value, restoring defaults.");
-      applyDefaultSettings();
-      return true;
-    }
-    if (!parseUint8Token(brightnessToken, 0, 255, &savedBrightness))
-    {
-      if (DEBUG)
-        Serial.println("Invalid LED brightness value, restoring defaults.");
-      applyDefaultSettings();
-      return true;
-    }
-
-    if (DEBUG)
-    {
-      Serial.print("Saved mode: ");
-      Serial.println(savedMode);
-      Serial.print("Saved device orientation: ");
-      Serial.println(savedOrientation);
-      Serial.print("Saved LED brightness: ");
-      Serial.println(savedBrightness);
-    }
-
-    switch (savedMode)
-    {
-    case 0:
-    case 1:
-      currentMode = DMD2;
-      break;
-    case 2:
-      currentMode = OsmAnd;
-      break;
-    case 3:
-      currentMode = MEDIA;
-      break;
-    default:
-      applyDefaultSettings();
-      return true;
-    }
-    buttonOrientation = savedOrientation;
-    LEDbrightness = savedBrightness;
-    setButtonMapping(buttonOrientation);
-    setRGBColor(LEDState);
-
-    return false; // no error
-  }
-  else
+  if (!preferences.begin(SETTINGS_NAMESPACE, true))
   {
     if (DEBUG)
-      Serial.println(FILENAME " settings file not found.");
-
+      Serial.println("Error opening NVS for reading.");
     return true;
   }
+
+  if (!preferences.isKey("mode") || !preferences.isKey("orient") || !preferences.isKey("bright"))
+  {
+    preferences.end();
+    if (DEBUG)
+      Serial.println("Settings not found.");
+    return true;
+  }
+
+  uint8_t savedMode = preferences.getUChar("mode", (uint8_t)DEFAULT_MODE);
+  uint8_t savedOrientation = preferences.getUChar("orient", DEFAULT_BUTTON_MAP);
+  uint8_t savedBrightness = preferences.getUChar("bright", 0);
+  preferences.end();
+
+  if (savedOrientation > 3)
+  {
+    if (DEBUG)
+      Serial.println("Invalid orientation value, restoring defaults.");
+    applyDefaultSettings();
+    return true;
+  }
+
+  switch (savedMode)
+  {
+  case 0:
+  case 1:
+    currentMode = DMD2;
+    break;
+  case 2:
+    currentMode = OsmAnd;
+    break;
+  case 3:
+    currentMode = MEDIA;
+    break;
+  default:
+    applyDefaultSettings();
+    return true;
+  }
+
+  buttonOrientation = savedOrientation;
+  LEDbrightness = savedBrightness;
+  setButtonMapping(buttonOrientation);
+  setRGBColor(LEDState);
+
+  if (DEBUG)
+  {
+    Serial.print("Saved mode: ");
+    Serial.println(savedMode);
+    Serial.print("Saved device orientation: ");
+    Serial.println(savedOrientation);
+    Serial.print("Saved LED brightness: ");
+    Serial.println(savedBrightness);
+  }
+
+  return false; // no error
 }
 
 void setup()
@@ -1107,36 +1052,21 @@ void setup()
     Serial.begin(115200);
     unsigned long serialWaitStart = millis();
     while (!Serial && (millis() - serialWaitStart < 2000))
-      delay(10); // for nrf52840 with native usb
+      delay(10);
 
     Serial.println("MotoButtons 2 BLE Controller");
     Serial.println("-----------------------------\n");
     Serial.println();
   }
 
-  Bluefruit.begin();
-  // HID Device can have a min connection interval of 9*1.25 = 11.25 ms
-  Bluefruit.Periph.setConnInterval(9, 16); // min = 9*1.25=11.25 ms, max = 16*1.25=20ms
-  Bluefruit.setTxPower(BLE_TX_POWER);      // Check bluefruit.h for supported values
-  Bluefruit.setName(BLE_DEVICE_NAME);
-
-  // Configure and Start Device Information Service
-  bledis.setManufacturer(BLE_MANUFACTURER);
-  bledis.setModel(BLE_DEVICE_MODEL);
-  bledis.begin();
-
-  // BLE HID
-  blehid.begin();
-
-  // Set up and start advertising
-  startBLEAdvertise();
+  bleKeyboard.setTxPower(BLE_TX_POWER);
+  if (DEBUG)
+    bleKeyboard.setLogLevel(HIDLogLevel::Normal);
+  bleKeyboard.begin();
 
   if (DEBUG)
     Serial.println("Setup complete.");
   setRGBColor(SETUP_COMPLETE_COLOR);
-
-  // Initialize Internal File System
-  InternalFS.begin();
 
   // let the user change the orientation of the device at startup
   int buttonMap = getButtonMapSelection();
@@ -1175,45 +1105,17 @@ void setup()
   indicateMode(currentMode);
 }
 
-void startBLEAdvertise(void)
-{
-  // Advertising packet
-  Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
-  Bluefruit.Advertising.addTxPower();
-  Bluefruit.Advertising.addAppearance(BLE_APPEARANCE_HID_KEYBOARD);
-
-  // Include BLE HID service
-  Bluefruit.Advertising.addService(blehid);
-
-  // There is enough room for 'Name' in the advertising packet
-  Bluefruit.Advertising.addName();
-
-  /* Start Advertising
-   * - Enable auto advertising if disconnected
-   * - Interval:  fast mode = 20 ms, slow mode = 152.5 ms
-   * - Timeout for fast mode is 30 seconds
-   * - Start(timeout) with timeout = 0 will advertise forever (until connected)
-   *
-   * For recommended advertising interval
-   * https://developer.apple.com/library/content/qa/qa1931/_index.html
-   */
-  Bluefruit.Advertising.restartOnDisconnect(true);
-  Bluefruit.Advertising.setInterval(32, 244); // in unit of 0.625 ms
-  Bluefruit.Advertising.setFastTimeout(30);   // number of seconds in fast mode
-  Bluefruit.Advertising.start(0);             // 0 = Don't stop advertising after n seconds
-}
-
 void loop()
 {
   // Indicate whether the device is connected and running
-  if (!BLE_connected && (Bluefruit.connected() > 0))
+  if (!BLE_connected && bleKeyboard.isConnected())
   {
     if (DEBUG)
       Serial.println("BLE connected to host.");
     showMode(currentMode);
     BLE_connected = true;
   }
-  else if (Bluefruit.connected() == 0)
+  else if (!bleKeyboard.isConnected())
   {
     RGBToggle(BLE_COLOR);
     delay(200);
@@ -1224,7 +1126,7 @@ void loop()
   // Read current state of buttons
   updateButtons();
 
-  if (BLE_connected)
+  if (bleKeyboard.isPaired())
   {
     bool osmandRepeatSend = false;
     if (hasOsmAndRepeatableHold() && !keyReportChanged && !forceKeyReport &&
@@ -1247,7 +1149,7 @@ void loop()
           Serial.println("Key report forced.");
       }
       mapButtonsToKeyReport();
-      blehid.keyboardReport(0, keyReport);
+      sendKeyboardReport();
       lastOsmAndRepeatTime = millis();
       if (DEBUG)
         Serial.println("Key report sent.");
