@@ -129,8 +129,8 @@ uint8_t BUTTON_A = D5;
 uint8_t BUTTON_B = D6;
 uint8_t BUTTON_C = D7;
 uint8_t RGB_LED_RED = D0;
-uint8_t RGB_LED_BLUE = D1;
-uint8_t RGB_LED_GREEN = D2;
+uint8_t RGB_LED_GREEN = D1;
+uint8_t RGB_LED_BLUE = D2;
 #define USER_LED_PIN LED_BUILTIN
 #define USER_LED_ACTIVE_LOW true
 
@@ -141,7 +141,9 @@ const uint8_t JOYSTICK_PIN_LEFT = D8;
 const uint8_t JOYSTICK_PIN_RIGHT = D3;
 
 #define DEBOUNCE_TIME_MS 50
-#define OSMAND_REPEAT_INTERVAL_MS 250
+#define DIRECTION_REPEAT_INTERVAL_MS 100
+#define ABC_REPEAT_INTERVAL_MS 250
+#define DMD_ABC_REPEAT_INTERVAL_MS 100
 // state of buttons
 bool button_up_state = false;
 bool button_down_state = false;
@@ -183,7 +185,7 @@ unsigned long button_C_time = 0;
 int LEDbrightness = 0;
 unsigned long brightnessAdjustTime = 0;
 bool brightnessComboConsumed = false;
-unsigned long lastOsmAndRepeatTime = 0;
+unsigned long lastKeyRepeatTime = 0;
 /*------------------- END BUTTON CONFIG & LOGIC-----------------------*/
 
 void setUserLED(bool on)
@@ -661,14 +663,46 @@ void handleBrightnessCombo()
   }
 }
 
-bool hasOsmAndRepeatableHold()
+bool hasRepeatableKeyHold()
 {
-  if (currentMode != OsmAnd)
-    return false;
+  bool centerActive = isCenterActive();
 
-  return (button_A_state && !button_B_state && !button_C_state) ||
-         (button_B_state && !button_A_state && !button_C_state) ||
-         (button_C_state && !button_A_state && !button_B_state);
+  switch (currentMode)
+  {
+  case DMD2:
+    if (!centerActive &&
+        (button_up_state || button_down_state || button_left_state || button_right_state))
+      return true;
+
+    return (button_A_state && !button_B_state && !button_C_state) ||
+           (button_B_state && !button_A_state && !button_C_state) ||
+           (button_C_state && !button_A_state && !button_B_state);
+
+  case OsmAnd:
+    if (!centerActive &&
+        (button_up_state || button_down_state || button_left_state || button_right_state))
+      return true;
+
+    return (button_A_state && !button_B_state && !button_C_state) ||
+           (button_B_state && !button_A_state && !button_C_state) ||
+           (button_C_state && !button_A_state && !button_B_state);
+
+  default:
+    return false;
+  }
+}
+
+uint16_t getKeyRepeatIntervalMs()
+{
+  bool centerActive = isCenterActive();
+  if (!centerActive &&
+      (button_up_state || button_down_state || button_left_state || button_right_state))
+    return DIRECTION_REPEAT_INTERVAL_MS;
+
+  if (currentMode == DMD2)
+    return DMD_ABC_REPEAT_INTERVAL_MS;
+
+  return ABC_REPEAT_INTERVAL_MS;
 }
 
 void updateButtons()
@@ -1128,17 +1162,18 @@ void loop()
 
   if (bleKeyboard.isPaired())
   {
-    bool osmandRepeatSend = false;
-    if (hasOsmAndRepeatableHold() && !keyReportChanged && !forceKeyReport &&
-        (millis() - lastOsmAndRepeatTime >= OSMAND_REPEAT_INTERVAL_MS))
+    bool repeatSend = false;
+    uint16_t keyRepeatIntervalMs = getKeyRepeatIntervalMs();
+    if (hasRepeatableKeyHold() && !keyReportChanged && !forceKeyReport &&
+        (millis() - lastKeyRepeatTime >= keyRepeatIntervalMs))
     {
-      osmandRepeatSend = true;
+      repeatSend = true;
     }
 
     // Compile the BLE HID key report
-    if (keyReportChanged || forceKeyReport || osmandRepeatSend)
+    if (keyReportChanged || forceKeyReport || repeatSend)
     {
-      if (osmandRepeatSend)
+      if (repeatSend)
       {
         releaseAllKeys();
         delay(5);
@@ -1150,13 +1185,13 @@ void loop()
       }
       mapButtonsToKeyReport();
       sendKeyboardReport();
-      lastOsmAndRepeatTime = millis();
+      lastKeyRepeatTime = millis();
       if (DEBUG)
         Serial.println("Key report sent.");
     }
-    else if (!hasOsmAndRepeatableHold())
+    else if (!hasRepeatableKeyHold())
     {
-      lastOsmAndRepeatTime = millis();
+      lastKeyRepeatTime = millis();
     }
 
   }
