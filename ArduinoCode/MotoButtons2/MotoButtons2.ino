@@ -1,7 +1,11 @@
 /*********************************************************************
 License: GNU GENERAL PUBLIC LICENSE; Version 3, 29 June 2007
 Version: 2.0 with support for the following modes: DMD2, OsmAnd, media (music)
+<<<<<<< Updated upstream
 Device: Seeed XIAO nRF52840 (MotoButtons 2)
+=======
+Device: Seeed XIAO ESP32C3 (MotoButtons 2)
+>>>>>>> Stashed changes
 *********************************************************************/
 #include <bluefruit.h>
 #include <Adafruit_LittleFS.h>
@@ -33,7 +37,11 @@ BLEHidAdafruit blehid;
 
 // BLE configuration
 #define BLE_TX_POWER 8
+<<<<<<< Updated upstream
 const char BLE_DEVICE_NAME[] = "Bush Moto BT3";
+=======
+const char BLE_DEVICE_NAME[] = "Bush Moto BTx";
+>>>>>>> Stashed changes
 const char BLE_DEVICE_MODEL[] = "Btns v2.0";
 const char BLE_MANUFACTURER[] = "Bush";
 bool BLE_connected = false;
@@ -127,6 +135,7 @@ uint8_t keyReport[N_KEY_REPORT] = {HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID
 bool keyReportChanged = false;
 bool forceKeyReport = false; // used to force another key report for key up activation events
 
+<<<<<<< Updated upstream
 // Digital IO pin mapping (default)
 uint8_t BUTTON_UP = 3;
 uint8_t BUTTON_DOWN = 8;
@@ -148,6 +157,54 @@ const uint8_t JOYSTICK_PIN_RIGHT = 3;
 
 #define DEBOUNCE_TIME_MS 50
 #define OSMAND_REPEAT_INTERVAL_MS 250
+=======
+// Seeed XIAO ESP32C3 pin mapping, matching the existing MotoButtons wiring.
+// Note: GPIO2/D0, GPIO8/D8, and GPIO9/D9 are ESP32-C3 boot strapping pins.
+// This wiring uses D8/D9 for buttons, so avoid holding DOWN or CENTER while
+// powering on or entering upload mode.
+const uint8_t PIN_JOYSTICK_UP = D3;
+const uint8_t PIN_JOYSTICK_DOWN = D8;
+const uint8_t PIN_JOYSTICK_LEFT = D4;
+const uint8_t PIN_JOYSTICK_RIGHT = D10;
+const uint8_t PIN_BUTTON_CENTER = D9;
+const uint8_t PIN_BUTTON_A = D5;
+const uint8_t PIN_BUTTON_B = D6;
+const uint8_t PIN_BUTTON_C = D1;
+
+uint8_t BUTTON_UP = PIN_JOYSTICK_UP;
+uint8_t BUTTON_DOWN = PIN_JOYSTICK_DOWN;
+uint8_t BUTTON_LEFT = PIN_JOYSTICK_LEFT;
+uint8_t BUTTON_RIGHT = PIN_JOYSTICK_RIGHT;
+uint8_t BUTTON_CENTER = PIN_BUTTON_CENTER;
+uint8_t BUTTON_A = PIN_BUTTON_A;
+uint8_t BUTTON_B = PIN_BUTTON_B;
+uint8_t BUTTON_C = PIN_BUTTON_C;
+const bool BUTTON_UP_ACTIVE_LOW = false;
+const bool BUTTON_DOWN_ACTIVE_LOW = false;
+const bool BUTTON_LEFT_ACTIVE_LOW = false;
+const bool BUTTON_RIGHT_ACTIVE_LOW = false;
+const bool BUTTON_CENTER_ACTIVE_LOW = true;
+const bool BUTTON_A_ACTIVE_LOW = false;
+const bool BUTTON_B_ACTIVE_LOW = false;
+const bool BUTTON_C_ACTIVE_LOW = false;
+uint8_t RGB_LED_RED = D0;
+uint8_t RGB_LED_GREEN = D7;
+uint8_t RGB_LED_BLUE = D2;
+#define USER_LED_ENABLED false
+#define USER_LED_PIN 255
+#define USER_LED_ACTIVE_LOW true
+
+// Raw joystick GPIOs used for startup orientation selection.
+const uint8_t JOYSTICK_PIN_UP = PIN_JOYSTICK_UP;
+const uint8_t JOYSTICK_PIN_DOWN = PIN_JOYSTICK_DOWN;
+const uint8_t JOYSTICK_PIN_LEFT = PIN_JOYSTICK_LEFT;
+const uint8_t JOYSTICK_PIN_RIGHT = PIN_JOYSTICK_RIGHT;
+
+#define DEBOUNCE_TIME_MS 120
+#define DIRECTION_REPEAT_INTERVAL_MS 100
+#define ABC_REPEAT_INTERVAL_MS 250
+#define DMD_ABC_REPEAT_INTERVAL_MS 100
+>>>>>>> Stashed changes
 // state of buttons
 bool button_up_state = false;
 bool button_down_state = false;
@@ -192,6 +249,23 @@ bool brightnessComboConsumed = false;
 unsigned long lastOsmAndRepeatTime = 0;
 /*------------------- END BUTTON CONFIG & LOGIC-----------------------*/
 
+<<<<<<< Updated upstream
+=======
+void setUserLED(bool on)
+{
+  if (!USER_LED_ENABLED)
+    return;
+
+  digitalWrite(USER_LED_PIN, (USER_LED_ACTIVE_LOW ? !on : on) ? HIGH : LOW);
+}
+
+bool readButtonPin(uint8_t pin, bool activeLow)
+{
+  bool reading = digitalRead(pin);
+  return activeLow ? !reading : reading;
+}
+
+>>>>>>> Stashed changes
 /*
   Set the color of the RGB LED to one of the 7 possibilities, plus off
   For a common anode(+) LED, LOW is ON and HIGH is OFF.
@@ -346,10 +420,10 @@ int getButtonMapSelection()
   {
     // Read all four directions because we can only allow a mode switch if
     // one direction is pressed
-    uint8_t up = digitalRead(JOYSTICK_PIN_UP);
-    uint8_t down = digitalRead(JOYSTICK_PIN_DOWN);
-    uint8_t left = digitalRead(JOYSTICK_PIN_LEFT);
-    uint8_t right = digitalRead(JOYSTICK_PIN_RIGHT);
+    uint8_t up = readButtonPin(JOYSTICK_PIN_UP, BUTTON_UP_ACTIVE_LOW);
+    uint8_t down = readButtonPin(JOYSTICK_PIN_DOWN, BUTTON_DOWN_ACTIVE_LOW);
+    uint8_t left = readButtonPin(JOYSTICK_PIN_LEFT, BUTTON_LEFT_ACTIVE_LOW);
+    uint8_t right = readButtonPin(JOYSTICK_PIN_RIGHT, BUTTON_RIGHT_ACTIVE_LOW);
 
     if (up + down + left + right > 1)
       return -1;
@@ -373,18 +447,15 @@ int getButtonMapSelection()
   return -1;
 }
 
-/* Change the mapping of buttons based on a map specifier, buttMap
- * butMapp:
- * 	0: UP is GPIO pin 2
- *  1: UP is GPIO pin 3
- *  2: UP is GPIO pin 4
- *  3: UP is GPIO pin 0
+/* Change the logical joystick mapping based on a map specifier, buttMap.
+ * This lets the controller be mounted in four orientations without rewiring.
  */
 bool setButtonMapping(uint8_t buttMap)
 {
   switch (buttMap)
   {
   case 0: // three buttons on top
+<<<<<<< Updated upstream
     BUTTON_UP = 10;
     BUTTON_DOWN = 4;
     BUTTON_LEFT = 3;
@@ -423,6 +494,46 @@ bool setButtonMapping(uint8_t buttMap)
     BUTTON_A = 5;
     BUTTON_B = 6;
     BUTTON_C = 7;
+=======
+    BUTTON_UP = PIN_JOYSTICK_RIGHT;
+    BUTTON_DOWN = PIN_JOYSTICK_LEFT;
+    BUTTON_LEFT = PIN_JOYSTICK_UP;
+    BUTTON_RIGHT = PIN_JOYSTICK_DOWN;
+    BUTTON_CENTER = PIN_BUTTON_CENTER;
+    BUTTON_A = PIN_BUTTON_A;
+    BUTTON_B = PIN_BUTTON_B;
+    BUTTON_C = PIN_BUTTON_C;
+    break;
+  case 1: // three buttons on left
+    BUTTON_UP = PIN_JOYSTICK_DOWN;
+    BUTTON_DOWN = PIN_JOYSTICK_UP;
+    BUTTON_LEFT = PIN_JOYSTICK_RIGHT;
+    BUTTON_RIGHT = PIN_JOYSTICK_LEFT;
+    BUTTON_CENTER = PIN_BUTTON_CENTER;
+    BUTTON_A = PIN_BUTTON_A;
+    BUTTON_B = PIN_BUTTON_B;
+    BUTTON_C = PIN_BUTTON_C;
+    break;
+  case 2: // three buttons on bottom
+    BUTTON_UP = PIN_JOYSTICK_LEFT;
+    BUTTON_DOWN = PIN_JOYSTICK_RIGHT;
+    BUTTON_LEFT = PIN_JOYSTICK_DOWN;
+    BUTTON_RIGHT = PIN_JOYSTICK_UP;
+    BUTTON_CENTER = PIN_BUTTON_CENTER;
+    BUTTON_A = PIN_BUTTON_A;
+    BUTTON_B = PIN_BUTTON_B;
+    BUTTON_C = PIN_BUTTON_C;
+    break;
+  case 3: // three buttons toward right
+    BUTTON_UP = PIN_JOYSTICK_UP;
+    BUTTON_DOWN = PIN_JOYSTICK_DOWN;
+    BUTTON_LEFT = PIN_JOYSTICK_LEFT;
+    BUTTON_RIGHT = PIN_JOYSTICK_RIGHT;
+    BUTTON_CENTER = PIN_BUTTON_CENTER;
+    BUTTON_A = PIN_BUTTON_A;
+    BUTTON_B = PIN_BUTTON_B;
+    BUTTON_C = PIN_BUTTON_C;
+>>>>>>> Stashed changes
     break;
   default:
     return true;
@@ -435,24 +546,19 @@ bool setButtonMapping(uint8_t buttMap)
 // if so, the program should ignore up/down/left/right on the joystick
 bool isCenterActive()
 {
-  if (button_center_state)
-    return true;
-  if (digitalRead(BUTTON_CENTER))
-    return true;
-
-  return false;
+  return button_center_state;
 }
 
 // if  This function should be called rapidly in a loop to update the debounce filter and key state
 //  https://docs.arduino.cc/built-in-examples/digital/Debounce
-bool debounceButton(unsigned int button, bool *state, bool *priorState, bool *buttonFlipped,
+bool debounceButton(unsigned int button, bool activeLow, bool *state, bool *priorState, bool *buttonFlipped,
                     unsigned long *debounceTime, const char *buttonName)
 {
   bool reading;
   unsigned long readTime;
   bool stateChanged = false;
 
-  reading = digitalRead(button);
+  reading = readButtonPin(button, activeLow);
   readTime = millis();
 
   // If reading has changed, switch has not settled yet
@@ -476,6 +582,16 @@ bool debounceButton(unsigned int button, bool *state, bool *priorState, bool *bu
   *priorState = reading;
 
   return stateChanged;
+}
+
+void initializeButtonState(uint8_t button, bool activeLow, bool *state, bool *priorState, bool *buttonFlipped,
+                           unsigned long *debounceTime)
+{
+  bool reading = readButtonPin(button, activeLow);
+  *state = reading;
+  *priorState = reading;
+  *buttonFlipped = false;
+  *debounceTime = millis();
 }
 
 void releaseAllKeys()
@@ -651,7 +767,31 @@ void handleBrightnessCombo()
 
 bool hasOsmAndRepeatableHold()
 {
+<<<<<<< Updated upstream
   if (currentMode != OsmAnd)
+=======
+  bool centerActive = isCenterActive();
+
+  switch (currentMode)
+  {
+  case DMD2:
+    if (!centerActive &&
+        (button_up_state || button_down_state || button_left_state || button_right_state))
+      return true;
+
+    return (button_A_state && !button_B_state && !button_C_state) ||
+           (button_B_state && !button_A_state && !button_C_state);
+
+  case OsmAnd:
+    if (!centerActive &&
+        (button_up_state || button_down_state || button_left_state || button_right_state))
+      return true;
+
+    return (button_A_state && !button_B_state && !button_C_state) ||
+           (button_B_state && !button_A_state && !button_C_state);
+
+  default:
+>>>>>>> Stashed changes
     return false;
 
   return (button_A_state && !button_B_state && !button_C_state) ||
@@ -664,14 +804,14 @@ void updateButtons()
   bool stateChanged = false;
 
   // Read the state of all physical buttons
-  stateChanged |= debounceButton(BUTTON_UP, &button_up_state, &button_up_state_prior, &button_up_flipped, &button_up_time, "UP");
-  stateChanged |= debounceButton(BUTTON_DOWN, &button_down_state, &button_down_state_prior, &button_down_flipped, &button_down_time, "DOWN");
-  stateChanged |= debounceButton(BUTTON_LEFT, &button_left_state, &button_left_state_prior, &button_left_flipped, &button_left_time, "LEFT");
-  stateChanged |= debounceButton(BUTTON_RIGHT, &button_right_state, &button_right_state_prior, &button_right_flipped, &button_right_time, "RIGHT");
-  stateChanged |= debounceButton(BUTTON_CENTER, &button_center_state, &button_center_state_prior, &button_center_flipped, &button_center_time, "CENTER");
-  stateChanged |= debounceButton(BUTTON_A, &button_A_state, &button_A_state_prior, &button_A_flipped, &button_A_time, "A");
-  stateChanged |= debounceButton(BUTTON_B, &button_B_state, &button_B_state_prior, &button_B_flipped, &button_B_time, "B");
-  stateChanged |= debounceButton(BUTTON_C, &button_C_state, &button_C_state_prior, &button_C_flipped, &button_C_time, "C");
+  stateChanged |= debounceButton(BUTTON_UP, BUTTON_UP_ACTIVE_LOW, &button_up_state, &button_up_state_prior, &button_up_flipped, &button_up_time, "UP");
+  stateChanged |= debounceButton(BUTTON_DOWN, BUTTON_DOWN_ACTIVE_LOW, &button_down_state, &button_down_state_prior, &button_down_flipped, &button_down_time, "DOWN");
+  stateChanged |= debounceButton(BUTTON_LEFT, BUTTON_LEFT_ACTIVE_LOW, &button_left_state, &button_left_state_prior, &button_left_flipped, &button_left_time, "LEFT");
+  stateChanged |= debounceButton(BUTTON_RIGHT, BUTTON_RIGHT_ACTIVE_LOW, &button_right_state, &button_right_state_prior, &button_right_flipped, &button_right_time, "RIGHT");
+  stateChanged |= debounceButton(BUTTON_CENTER, BUTTON_CENTER_ACTIVE_LOW, &button_center_state, &button_center_state_prior, &button_center_flipped, &button_center_time, "CENTER");
+  stateChanged |= debounceButton(BUTTON_A, BUTTON_A_ACTIVE_LOW, &button_A_state, &button_A_state_prior, &button_A_flipped, &button_A_time, "A");
+  stateChanged |= debounceButton(BUTTON_B, BUTTON_B_ACTIVE_LOW, &button_B_state, &button_B_state_prior, &button_B_flipped, &button_B_time, "B");
+  stateChanged |= debounceButton(BUTTON_C, BUTTON_C_ACTIVE_LOW, &button_C_state, &button_C_state_prior, &button_C_flipped, &button_C_time, "C");
 
   if (handleFormatCombo(stateChanged))
     return;
@@ -682,9 +822,15 @@ void updateButtons()
   // Indicate whether any buttons changed state
   keyReportChanged = stateChanged;
 
+<<<<<<< Updated upstream
   /* Hard reset and enter firmware udpate mode (DFU)
    * This mode is necessary because the bootloader in the Seed nRF52840 has a bug that prevents uploading new software
    * from the Arduino IDE if a BLE sketch is uploaded previously. Thus, it is necessary to enter via triggering a DFU reset event.
+=======
+  /* Hard reset.
+   * ESP32-C3 upload mode is handled by the ESP32 bootloader/Arduino IDE,
+   * so this combo now performs a normal software restart.
+>>>>>>> Stashed changes
    */
   if (button_A_state && button_C_state && !button_B_state && (millis() - button_A_time > MODE_RESET_MS) && (millis() - button_C_time > MODE_RESET_MS))
   {
@@ -755,7 +901,7 @@ void mapButtonsToKeyReport()
     else if (!button_B_state && button_B_flipped)
       button_B_flipped = false;
 
-    if (button_C_state && !button_A_state && !button_B_state && (i < N_KEY_REPORT))
+    if (button_C_state && button_C_flipped && !button_A_state && !button_B_state && (i < N_KEY_REPORT))
     {
       button_C_flipped = false;
       keyReport[i] = DMD_KEY_C;
@@ -828,7 +974,7 @@ void mapButtonsToKeyReport()
     else if (!button_B_state && button_B_flipped)
       button_B_flipped = false;
 
-    if (button_C_state && !button_A_state && !button_B_state && (i < N_KEY_REPORT))
+    if (button_C_state && button_C_flipped && !button_A_state && !button_B_state && (i < N_KEY_REPORT))
     {
       if (DEBUG)
         Serial.println("OsmAnd C");
@@ -908,7 +1054,7 @@ void mapButtonsToKeyReport()
     else if (!button_B_state && button_B_flipped)
       button_B_flipped = false;
 
-    if (button_C_state && !button_A_state && !button_B_state && (i < N_KEY_REPORT))
+    if (button_C_state && button_C_flipped && !button_A_state && !button_B_state && (i < N_KEY_REPORT))
     {
       if (DEBUG)
         Serial.println("Media key C");
@@ -933,18 +1079,33 @@ void mapButtonsToKeyReport()
 
 void setupDigitalIO()
 {
-  pinMode(BUTTON_UP, INPUT_PULLDOWN);
-  pinMode(BUTTON_DOWN, INPUT_PULLDOWN);
-  pinMode(BUTTON_LEFT, INPUT_PULLDOWN);
-  pinMode(BUTTON_RIGHT, INPUT_PULLDOWN);
-  pinMode(BUTTON_CENTER, INPUT_PULLDOWN);
-  pinMode(BUTTON_A, INPUT_PULLDOWN);
-  pinMode(BUTTON_B, INPUT_PULLDOWN);
-  pinMode(BUTTON_C, INPUT_PULLDOWN);
+  pinMode(BUTTON_UP, BUTTON_UP_ACTIVE_LOW ? INPUT_PULLUP : INPUT_PULLDOWN);
+  pinMode(BUTTON_DOWN, BUTTON_DOWN_ACTIVE_LOW ? INPUT_PULLUP : INPUT_PULLDOWN);
+  pinMode(BUTTON_LEFT, BUTTON_LEFT_ACTIVE_LOW ? INPUT_PULLUP : INPUT_PULLDOWN);
+  pinMode(BUTTON_RIGHT, BUTTON_RIGHT_ACTIVE_LOW ? INPUT_PULLUP : INPUT_PULLDOWN);
+  pinMode(BUTTON_CENTER, BUTTON_CENTER_ACTIVE_LOW ? INPUT_PULLUP : INPUT_PULLDOWN);
+  pinMode(BUTTON_A, BUTTON_A_ACTIVE_LOW ? INPUT_PULLUP : INPUT_PULLDOWN);
+  pinMode(BUTTON_B, BUTTON_B_ACTIVE_LOW ? INPUT_PULLUP : INPUT_PULLDOWN);
+  pinMode(BUTTON_C, BUTTON_C_ACTIVE_LOW ? INPUT_PULLUP : INPUT_PULLDOWN);
 
   pinMode(RGB_LED_RED, OUTPUT);
   pinMode(RGB_LED_BLUE, OUTPUT);
   pinMode(RGB_LED_GREEN, OUTPUT);
+<<<<<<< Updated upstream
+=======
+  if (USER_LED_ENABLED)
+    pinMode(USER_LED_PIN, OUTPUT);
+  setUserLED(false);
+
+  initializeButtonState(BUTTON_UP, BUTTON_UP_ACTIVE_LOW, &button_up_state, &button_up_state_prior, &button_up_flipped, &button_up_time);
+  initializeButtonState(BUTTON_DOWN, BUTTON_DOWN_ACTIVE_LOW, &button_down_state, &button_down_state_prior, &button_down_flipped, &button_down_time);
+  initializeButtonState(BUTTON_LEFT, BUTTON_LEFT_ACTIVE_LOW, &button_left_state, &button_left_state_prior, &button_left_flipped, &button_left_time);
+  initializeButtonState(BUTTON_RIGHT, BUTTON_RIGHT_ACTIVE_LOW, &button_right_state, &button_right_state_prior, &button_right_flipped, &button_right_time);
+  initializeButtonState(BUTTON_CENTER, BUTTON_CENTER_ACTIVE_LOW, &button_center_state, &button_center_state_prior, &button_center_flipped, &button_center_time);
+  initializeButtonState(BUTTON_A, BUTTON_A_ACTIVE_LOW, &button_A_state, &button_A_state_prior, &button_A_flipped, &button_A_time);
+  initializeButtonState(BUTTON_B, BUTTON_B_ACTIVE_LOW, &button_B_state, &button_B_state_prior, &button_B_flipped, &button_B_time);
+  initializeButtonState(BUTTON_C, BUTTON_C_ACTIVE_LOW, &button_C_state, &button_C_state_prior, &button_C_flipped, &button_C_time);
+>>>>>>> Stashed changes
 }
 
 bool writeSettings()
