@@ -1,11 +1,7 @@
 /*********************************************************************
 License: GNU GENERAL PUBLIC LICENSE; Version 3, 29 June 2007
 Version: 2.0 with support for the following modes: DMD2, OsmAnd, media (music)
-<<<<<<< Updated upstream
-Device: Seeed XIAO nRF52840 (MotoButtons 2)
-=======
 Device: Seeed XIAO ESP32C3 (MotoButtons 2)
->>>>>>> Stashed changes
 *********************************************************************/
 #include <bluefruit.h>
 #include <Adafruit_LittleFS.h>
@@ -37,11 +33,9 @@ BLEHidAdafruit blehid;
 
 // BLE configuration
 #define BLE_TX_POWER 8
-<<<<<<< Updated upstream
 const char BLE_DEVICE_NAME[] = "Bush Moto BT3";
 =======
 const char BLE_DEVICE_NAME[] = "Bush Moto BTx";
->>>>>>> Stashed changes
 const char BLE_DEVICE_MODEL[] = "Btns v2.0";
 const char BLE_MANUFACTURER[] = "Bush";
 bool BLE_connected = false;
@@ -135,7 +129,6 @@ uint8_t keyReport[N_KEY_REPORT] = {HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID
 bool keyReportChanged = false;
 bool forceKeyReport = false; // used to force another key report for key up activation events
 
-<<<<<<< Updated upstream
 // Digital IO pin mapping (default)
 uint8_t BUTTON_UP = 3;
 uint8_t BUTTON_DOWN = 8;
@@ -204,7 +197,6 @@ const uint8_t JOYSTICK_PIN_RIGHT = PIN_JOYSTICK_RIGHT;
 #define DIRECTION_REPEAT_INTERVAL_MS 100
 #define ABC_REPEAT_INTERVAL_MS 250
 #define DMD_ABC_REPEAT_INTERVAL_MS 100
->>>>>>> Stashed changes
 // state of buttons
 bool button_up_state = false;
 bool button_down_state = false;
@@ -248,9 +240,6 @@ unsigned long brightnessAdjustTime = 0;
 bool brightnessComboConsumed = false;
 unsigned long lastOsmAndRepeatTime = 0;
 /*------------------- END BUTTON CONFIG & LOGIC-----------------------*/
-
-<<<<<<< Updated upstream
-=======
 void setUserLED(bool on)
 {
   if (!USER_LED_ENABLED)
@@ -265,7 +254,6 @@ bool readButtonPin(uint8_t pin, bool activeLow)
   return activeLow ? !reading : reading;
 }
 
->>>>>>> Stashed changes
 /*
   Set the color of the RGB LED to one of the 7 possibilities, plus off
   For a common anode(+) LED, LOW is ON and HIGH is OFF.
@@ -455,7 +443,6 @@ bool setButtonMapping(uint8_t buttMap)
   switch (buttMap)
   {
   case 0: // three buttons on top
-<<<<<<< Updated upstream
     BUTTON_UP = 10;
     BUTTON_DOWN = 4;
     BUTTON_LEFT = 3;
@@ -533,7 +520,6 @@ bool setButtonMapping(uint8_t buttMap)
     BUTTON_A = PIN_BUTTON_A;
     BUTTON_B = PIN_BUTTON_B;
     BUTTON_C = PIN_BUTTON_C;
->>>>>>> Stashed changes
     break;
   default:
     return true;
@@ -767,7 +753,6 @@ void handleBrightnessCombo()
 
 bool hasOsmAndRepeatableHold()
 {
-<<<<<<< Updated upstream
   if (currentMode != OsmAnd)
 =======
   bool centerActive = isCenterActive();
@@ -791,7 +776,6 @@ bool hasOsmAndRepeatableHold()
            (button_B_state && !button_A_state && !button_C_state);
 
   default:
->>>>>>> Stashed changes
     return false;
 
   return (button_A_state && !button_B_state && !button_C_state) ||
@@ -822,15 +806,9 @@ void updateButtons()
   // Indicate whether any buttons changed state
   keyReportChanged = stateChanged;
 
-<<<<<<< Updated upstream
-  /* Hard reset and enter firmware udpate mode (DFU)
-   * This mode is necessary because the bootloader in the Seed nRF52840 has a bug that prevents uploading new software
-   * from the Arduino IDE if a BLE sketch is uploaded previously. Thus, it is necessary to enter via triggering a DFU reset event.
-=======
   /* Hard reset.
    * ESP32-C3 upload mode is handled by the ESP32 bootloader/Arduino IDE,
    * so this combo now performs a normal software restart.
->>>>>>> Stashed changes
    */
   if (button_A_state && button_C_state && !button_B_state && (millis() - button_A_time > MODE_RESET_MS) && (millis() - button_C_time > MODE_RESET_MS))
   {
@@ -1091,8 +1069,7 @@ void setupDigitalIO()
   pinMode(RGB_LED_RED, OUTPUT);
   pinMode(RGB_LED_BLUE, OUTPUT);
   pinMode(RGB_LED_GREEN, OUTPUT);
-<<<<<<< Updated upstream
-=======
+
   if (USER_LED_ENABLED)
     pinMode(USER_LED_PIN, OUTPUT);
   setUserLED(false);
@@ -1105,7 +1082,6 @@ void setupDigitalIO()
   initializeButtonState(BUTTON_A, BUTTON_A_ACTIVE_LOW, &button_A_state, &button_A_state_prior, &button_A_flipped, &button_A_time);
   initializeButtonState(BUTTON_B, BUTTON_B_ACTIVE_LOW, &button_B_state, &button_B_state_prior, &button_B_flipped, &button_B_time);
   initializeButtonState(BUTTON_C, BUTTON_C_ACTIVE_LOW, &button_C_state, &button_C_state_prior, &button_C_flipped, &button_C_time);
->>>>>>> Stashed changes
 }
 
 bool writeSettings()
