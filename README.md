@@ -18,7 +18,7 @@
 
 ### Parts:
 - Some old USB-A cable for power and other wires
-- Seeed Studio XIAO nRF52840 series (I used Seeed Studio XIAO nRF52840 Sense)
+- Seeed Studio XIAO ESP32C3
 - 3x waterproof buttons (I used V12B-10N-A)
 - 5-way joystick (I used JS5208)
 - RGB LED common **anode ONLY** (I used OSTAMA5B31A) **Do not use common cathode, I already burned 2x Seeed boards to realize that**
@@ -61,8 +61,8 @@ Special functions:
 - Hold joystick up button when powering on device, it will select correct orientation
 - Button A+B long press - LED brightness changes; hold it until you are satisfied and release
 - Button B+C long press - Mode change: DMD2 (blue) -> OsmAnd (green) -> Media (magenta)
-- Button A+B+C long press (5 secs) - Erase FS. This is a workaround to get BT auto-connect working again
-- Button A+C long press (5 secs) - Enter DFU mode (for programming)
+- Button A+B+C long press (5 secs) - Reset saved settings and Bluetooth bonds. Use this if automatic reconnection stops working
+- Button A+C long press (5 secs) - Restart the controller
 
 
 ## Wiring
@@ -70,4 +70,4 @@ If something is unclear, please read [the original author's manuals](https://git
 <img src="Wiring/Wiring_Diagram_MotoButtons2_analog_mod.png" alt="Wiring Diagram" width="600"/>
 
 ## Code
-Please read [the original author's manuals](https://github.com/joncox123/MotoButtons2/tree/main/Programming) on how to do that.
+See the [programming instructions](Programming/README.md).
