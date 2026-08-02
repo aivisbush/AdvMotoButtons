@@ -10,7 +10,7 @@ Device: Seeed XIAO ESP32C3 (MotoButtons 2)
 #include <esp_system.h>
 
 // Enable serial debugging (turn this off if not connected to PC)
-#define DEBUG true
+#define DEBUG false
 
 // How long factory-reset and software-restart chords must be held
 #define MODE_RESET_MS 5000
@@ -1246,7 +1246,14 @@ void setupBLE()
   advertising->addServiceUUID(blehid->getHidService()->getUUID());
   advertising->enableScanResponse(true);
   advertising->setPreferredParams(0x06, 0x12);
-  NimBLEDevice::startAdvertising();
+
+  NimBLEAdvertisementData scanResponse;
+  scanResponse.setName(BLE_DEVICE_NAME);
+  advertising->setScanResponseData(scanResponse);
+
+  bool advertisingStarted = NimBLEDevice::startAdvertising();
+  if (DEBUG)
+    Serial.println(advertisingStarted ? "BLE advertising started." : "BLE advertising failed.");
 }
 
 void setup()
