@@ -15,7 +15,7 @@ Device: Seeed XIAO ESP32C3 (MotoButtons 2)
 #endif
 
 // Enable serial debugging (turn this off if not connected to PC)
-#define DEBUG false
+#define DEBUG true
 
 // How long factory-reset and software-restart chords must be held
 #define MODE_RESET_MS 5000
@@ -40,14 +40,11 @@ volatile bool BLE_connected = false;
 
 BLEHIDDevice *blehid = nullptr;
 BLECharacteristic *keyboardInput = nullptr;
-BLECharacteristic *consumerInput = nullptr;
 BLEServer *bleServer = nullptr;
 
 const uint8_t KEYBOARD_REPORT_ID = 1;
-const uint8_t CONSUMER_REPORT_ID = 2;
 
-// Keyboard report (modifier, reserved byte, six HID key usages) followed by
-// a separate 16-bit consumer-control report for media and brightness keys.
+// One HID input report containing keyboard and consumer-control fields.
 const uint8_t HID_REPORT_DESCRIPTOR[] = {
   0x05, 0x01,       // Usage Page (Generic Desktop)
   0x09, 0x06,       // Usage (Keyboard)
@@ -72,12 +69,8 @@ const uint8_t HID_REPORT_DESCRIPTOR[] = {
   0x19, 0x00,       //   Usage Minimum (Reserved)
   0x29, 0x65,       //   Usage Maximum (Keyboard Application)
   0x81, 0x00,       //   Input (Data, Array, Absolute)
-  0xC0,             // End Collection
 
-  0x05, 0x0C,       // Usage Page (Consumer)
-  0x09, 0x01,       // Usage (Consumer Control)
-  0xA1, 0x01,       // Collection (Application)
-  0x85, 0x02,       //   Report ID (2)
+  0x05, 0x0C,       //   Usage Page (Consumer)
   0x15, 0x00,       //   Logical Minimum (0)
   0x26, 0xFF, 0x03, //   Logical Maximum (1023)
   0x19, 0x00,       //   Usage Minimum (Unassigned)
@@ -598,7 +591,7 @@ void sendKeyboardReport()
   if (!BLE_connected || keyboardInput == nullptr)
     return;
 
-  uint8_t report[8] = {0, 0, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE};
+  uint8_t report[10] = {0, 0, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, 0, 0};
   memcpy(&report[2], keyReport, sizeof(keyReport));
   keyboardInput->setValue(report, sizeof(report));
   keyboardInput->notify();
@@ -606,17 +599,18 @@ void sendKeyboardReport()
 
 void sendConsumerKey(uint16_t usage)
 {
-  if (!BLE_connected || consumerInput == nullptr)
+  if (!BLE_connected || keyboardInput == nullptr)
     return;
 
-  uint8_t report[2] = {(uint8_t)(usage & 0xFF), (uint8_t)(usage >> 8)};
-  consumerInput->setValue(report, sizeof(report));
-  consumerInput->notify();
+  uint8_t report[10] = {0, 0, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE,
+                        (uint8_t)(usage & 0xFF), (uint8_t)(usage >> 8)};
+  keyboardInput->setValue(report, sizeof(report));
+  keyboardInput->notify();
   delay(5);
 
-  const uint8_t releaseReport[2] = {0, 0};
-  consumerInput->setValue(releaseReport, sizeof(releaseReport));
-  consumerInput->notify();
+  const uint8_t releaseReport[10] = {0};
+  keyboardInput->setValue(releaseReport, sizeof(releaseReport));
+  keyboardInput->notify();
 }
 
 void releaseAllKeys()
@@ -764,7 +758,7 @@ bool handleRestartCombo()
 
 void handleModeCycleCombo()
 {
-  if (!button_B_state || !button_C_state)
+  if (!button_B_state && !button_C_state)
     modeButtonsReleased = true;
 
   if (button_B_state && button_C_state && !button_A_state &&
@@ -1242,7 +1236,6 @@ void setupBLE()
   blehid->hidInfo(0x00, 0x01);
   blehid->reportMap((uint8_t *)HID_REPORT_DESCRIPTOR, sizeof(HID_REPORT_DESCRIPTOR));
   keyboardInput = blehid->inputReport(KEYBOARD_REPORT_ID);
-  consumerInput = blehid->inputReport(CONSUMER_REPORT_ID);
   blehid->setBatteryLevel(100);
   blehid->startServices();
 
