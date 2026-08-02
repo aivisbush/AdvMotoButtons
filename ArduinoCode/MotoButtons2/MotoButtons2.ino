@@ -208,7 +208,7 @@ const uint8_t PIN_JOYSTICK_LEFT = D4;
 const uint8_t PIN_JOYSTICK_RIGHT = D10;
 const uint8_t PIN_BUTTON_CENTER = D9;
 const uint8_t PIN_BUTTON_A = D5;
-const uint8_t PIN_BUTTON_B = D6;
+const uint8_t PIN_BUTTON_B = D2;
 const uint8_t PIN_BUTTON_C = D1;
 
 uint8_t BUTTON_UP = PIN_JOYSTICK_UP;
@@ -229,7 +229,7 @@ const bool BUTTON_B_ACTIVE_LOW = false;
 const bool BUTTON_C_ACTIVE_LOW = false;
 uint8_t RGB_LED_RED = D0;
 uint8_t RGB_LED_GREEN = D7;
-uint8_t RGB_LED_BLUE = D2;
+uint8_t RGB_LED_BLUE = D6;
 #define USER_LED_ENABLED false
 #define USER_LED_PIN 255
 #define USER_LED_ACTIVE_LOW true
