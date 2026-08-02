@@ -4,15 +4,10 @@ Version: 2.0 with support for the following modes: DMD2, OsmAnd, media (music)
 Device: Seeed XIAO ESP32C3 (MotoButtons 2)
 *********************************************************************/
 #include <Arduino.h>
-#include <BLEDevice.h>
-#include <BLEHIDDevice.h>
-#include <BLEServer.h>
-#include <BLESecurity.h>
+#include <NimBLEDevice.h>
+#include <NimBLEHIDDevice.h>
 #include <Preferences.h>
 #include <esp_system.h>
-#if defined(CONFIG_NIMBLE_ENABLED)
-#include <host/ble_store.h>
-#endif
 
 // Enable serial debugging (turn this off if not connected to PC)
 #define DEBUG true
@@ -32,19 +27,21 @@ const char SETTINGS_ORIENTATION_KEY[] = "orientation";
 const char SETTINGS_BRIGHTNESS_KEY[] = "brightness";
 
 // BLE configuration
-#define BLE_TX_POWER ESP_PWR_LVL_P9
-const char BLE_DEVICE_NAME[] = "Bush Moto BT12";
+#define BLE_TX_POWER 9
+const char BLE_DEVICE_NAME[] = "Bush Moto BT14";
 const char BLE_DEVICE_MODEL[] = "Btns v2.0";
 const char BLE_MANUFACTURER[] = "Bush";
 volatile bool BLE_connected = false;
 
-BLEHIDDevice *blehid = nullptr;
-BLECharacteristic *keyboardInput = nullptr;
-BLEServer *bleServer = nullptr;
+NimBLEHIDDevice *blehid = nullptr;
+NimBLECharacteristic *keyboardInput = nullptr;
+NimBLECharacteristic *consumerInput = nullptr;
+NimBLEServer *bleServer = nullptr;
 
 const uint8_t KEYBOARD_REPORT_ID = 1;
+const uint8_t CONSUMER_REPORT_ID = 2;
 
-// One HID input report containing keyboard and consumer-control fields.
+// Separate keyboard and consumer-control input reports.
 const uint8_t HID_REPORT_DESCRIPTOR[] = {
   0x05, 0x01,       // Usage Page (Generic Desktop)
   0x09, 0x06,       // Usage (Keyboard)
@@ -69,8 +66,12 @@ const uint8_t HID_REPORT_DESCRIPTOR[] = {
   0x19, 0x00,       //   Usage Minimum (Reserved)
   0x29, 0x65,       //   Usage Maximum (Keyboard Application)
   0x81, 0x00,       //   Input (Data, Array, Absolute)
+  0xC0,             // End Collection
 
-  0x05, 0x0C,       //   Usage Page (Consumer)
+  0x05, 0x0C,       // Usage Page (Consumer)
+  0x09, 0x01,       // Usage (Consumer Control)
+  0xA1, 0x01,       // Collection (Application)
+  0x85, 0x02,       //   Report ID (2)
   0x15, 0x00,       //   Logical Minimum (0)
   0x26, 0xFF, 0x03, //   Logical Maximum (1023)
   0x19, 0x00,       //   Usage Minimum (Unassigned)
@@ -591,7 +592,7 @@ void sendKeyboardReport()
   if (!BLE_connected || keyboardInput == nullptr)
     return;
 
-  uint8_t report[10] = {0, 0, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, 0, 0};
+  uint8_t report[8] = {0, 0, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE};
   memcpy(&report[2], keyReport, sizeof(keyReport));
   keyboardInput->setValue(report, sizeof(report));
   keyboardInput->notify();
@@ -599,18 +600,17 @@ void sendKeyboardReport()
 
 void sendConsumerKey(uint16_t usage)
 {
-  if (!BLE_connected || keyboardInput == nullptr)
+  if (!BLE_connected || consumerInput == nullptr)
     return;
 
-  uint8_t report[10] = {0, 0, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE,
-                        (uint8_t)(usage & 0xFF), (uint8_t)(usage >> 8)};
-  keyboardInput->setValue(report, sizeof(report));
-  keyboardInput->notify();
+  uint8_t report[2] = {(uint8_t)(usage & 0xFF), (uint8_t)(usage >> 8)};
+  consumerInput->setValue(report, sizeof(report));
+  consumerInput->notify();
   delay(5);
 
-  const uint8_t releaseReport[10] = {0};
-  keyboardInput->setValue(releaseReport, sizeof(releaseReport));
-  keyboardInput->notify();
+  const uint8_t releaseReport[2] = {0, 0};
+  consumerInput->setValue(releaseReport, sizeof(releaseReport));
+  consumerInput->notify();
 }
 
 void releaseAllKeys()
@@ -661,11 +661,7 @@ bool clearSettings()
 
 bool clearBLEBonds()
 {
-#if defined(CONFIG_NIMBLE_ENABLED)
-  return ble_store_clear() == 0;
-#else
-  return false;
-#endif
+  return NimBLEDevice::deleteAllBonds();
 }
 
 bool handleFormatCombo()
@@ -842,8 +838,7 @@ uint16_t getRepeatInterval()
   switch (currentMode)
   {
   case DMD2:
-    if (!centerActive &&
-        (button_up_state || button_down_state || button_left_state || button_right_state))
+    if (button_up_state || button_down_state || button_left_state || button_right_state)
       return DIRECTION_REPEAT_INTERVAL_MS;
 
     if ((button_A_state && !button_B_state && !button_C_state) ||
@@ -919,23 +914,31 @@ void mapButtonsToKeyReport()
   switch (currentMode)
   {
   case DMD2:
-    if (button_up_state && !centerActive)
+    if (button_up_state)
     {
+      if (DEBUG)
+        Serial.println("DMD2 UP");
       keyReport[i] = DMD_KEY_UP;
       ++i;
     }
-    if (button_down_state && !centerActive)
+    if (button_down_state)
     {
+      if (DEBUG)
+        Serial.println("DMD2 DOWN");
       keyReport[i] = DMD_KEY_DOWN;
       ++i;
     }
-    if (button_left_state && !centerActive)
+    if (button_left_state)
     {
+      if (DEBUG)
+        Serial.println("DMD2 LEFT");
       keyReport[i] = DMD_KEY_LEFT;
       ++i;
     }
-    if (button_right_state && !centerActive)
+    if (button_right_state)
     {
+      if (DEBUG)
+        Serial.println("DMD2 RIGHT");
       keyReport[i] = DMD_KEY_RIGHT;
       ++i;
     }
@@ -1205,47 +1208,45 @@ bool readSettings()
   return true;
 }
 
-class MotoButtonsServerCallbacks : public BLEServerCallbacks
+class MotoButtonsServerCallbacks : public NimBLEServerCallbacks
 {
-  void onConnect(BLEServer *server) override
+  void onConnect(NimBLEServer *server, NimBLEConnInfo &connInfo) override
   {
     BLE_connected = true;
   }
 
-  void onDisconnect(BLEServer *server) override
+  void onDisconnect(NimBLEServer *server, NimBLEConnInfo &connInfo, int reason) override
   {
     BLE_connected = false;
-    BLEDevice::startAdvertising();
+    NimBLEDevice::startAdvertising();
   }
 };
 
 void setupBLE()
 {
-  BLEDevice::init(BLE_DEVICE_NAME);
-  BLEDevice::setPower(BLE_TX_POWER);
+  NimBLEDevice::init(BLE_DEVICE_NAME);
+  NimBLEDevice::setPower(BLE_TX_POWER);
+  NimBLEDevice::setSecurityAuth(true, false, true);
+  NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
 
-  BLESecurity::setCapability(ESP_IO_CAP_NONE);
-  BLESecurity::setAuthenticationMode(true, false, true);
-
-  bleServer = BLEDevice::createServer();
+  bleServer = NimBLEDevice::createServer();
   bleServer->setCallbacks(new MotoButtonsServerCallbacks());
 
-  blehid = new BLEHIDDevice(bleServer);
-  blehid->manufacturer()->setValue(BLE_MANUFACTURER);
-  blehid->pnp(0x02, 0x303A, 0x4001, 0x0200);
-  blehid->hidInfo(0x00, 0x01);
-  blehid->reportMap((uint8_t *)HID_REPORT_DESCRIPTOR, sizeof(HID_REPORT_DESCRIPTOR));
-  keyboardInput = blehid->inputReport(KEYBOARD_REPORT_ID);
+  blehid = new NimBLEHIDDevice(bleServer);
+  blehid->setManufacturer(BLE_MANUFACTURER);
+  blehid->setPnp(0x02, 0x303A, 0x4001, 0x0200);
+  blehid->setHidInfo(0x00, 0x01);
+  blehid->setReportMap((uint8_t *)HID_REPORT_DESCRIPTOR, sizeof(HID_REPORT_DESCRIPTOR));
+  keyboardInput = blehid->getInputReport(KEYBOARD_REPORT_ID);
+  consumerInput = blehid->getInputReport(CONSUMER_REPORT_ID);
   blehid->setBatteryLevel(100);
-  blehid->startServices();
 
-  BLEAdvertising *advertising = BLEDevice::getAdvertising();
+  NimBLEAdvertising *advertising = NimBLEDevice::getAdvertising();
   advertising->setAppearance(HID_KEYBOARD);
-  advertising->addServiceUUID(blehid->hidService()->getUUID());
-  advertising->setScanResponse(true);
-  advertising->setMinPreferred(0x06);
-  advertising->setMaxPreferred(0x12);
-  BLEDevice::startAdvertising();
+  advertising->addServiceUUID(blehid->getHidService()->getUUID());
+  advertising->enableScanResponse(true);
+  advertising->setPreferredParams(0x06, 0x12);
+  NimBLEDevice::startAdvertising();
 }
 
 void setup()
