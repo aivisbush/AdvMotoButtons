@@ -10,6 +10,7 @@ Device: ESP32-C3 OLED Mini (MotoButtons 2)
 #include <Preferences.h>
 #include <esp_system.h>
 #include <U8g2lib.h>
+#include "driver/gpio.h"
 
 // Enable serial debugging (turn this off if not connected to PC)
 #define DEBUG true
@@ -26,17 +27,17 @@ Device: ESP32-C3 OLED Mini (MotoButtons 2)
  *
  * GPIO20 = RX and GPIO21 = TX are left free.
  */
-const uint8_t PIN_BUTTON_A = 0;
-const uint8_t PIN_BUTTON_B = 1;
-const uint8_t PIN_BUTTON_C = 2;
+const uint8_t PIN_JOYSTICK_UP = 0;
+const uint8_t PIN_BUTTON_CENTER = 1;
+const uint8_t PIN_JOYSTICK_RIGHT = 2;
 const uint8_t PIN_JOYSTICK_DOWN = 3;
 const uint8_t PIN_JOYSTICK_LEFT = 4;
 const uint8_t OLED_SDA_PIN = 5;     // GPIO5 reserved by onboard OLED
 const uint8_t OLED_SCL_PIN = 6;     // GPIO6 reserved by onboard OLED
-const uint8_t PIN_JOYSTICK_UP = 7;
+const uint8_t PIN_BUTTON_A = 7;
 const uint8_t STATUS_LED_PIN = 8;   // GPIO8 reserved by onboard/status LED
-const uint8_t PIN_BUTTON_CENTER = 9;
-const uint8_t PIN_JOYSTICK_RIGHT = 10;
+const uint8_t PIN_BUTTON_B = 9;
+const uint8_t PIN_BUTTON_C = 10;
 // GPIO20 = RX, free
 // GPIO21 = TX, free
 
@@ -45,26 +46,30 @@ const bool BUTTON_DOWN_ACTIVE_LOW = true;
 const bool BUTTON_LEFT_ACTIVE_LOW = true;
 const bool BUTTON_RIGHT_ACTIVE_LOW = true;
 const bool BUTTON_CENTER_ACTIVE_LOW = true;
-const bool BUTTON_A_ACTIVE_LOW = false;
-const bool BUTTON_B_ACTIVE_LOW = false;
-const bool BUTTON_C_ACTIVE_LOW = false;
+const bool BUTTON_A_ACTIVE_LOW = true;
+const bool BUTTON_B_ACTIVE_LOW = true;
+const bool BUTTON_C_ACTIVE_LOW = true;
 
 const bool STATUS_LED_ACTIVE_LOW = true;
 const uint16_t STATUS_LED_PULSE_PERIOD_MS = 1200;
+const uint16_t OLED_BOOT_MESSAGE_MS = 1000;
 const uint16_t OLED_TRANSIENT_MS = 2000;
+const uint16_t JOYSTICK_ANALOG_ACTIVE_LOW_PRESS_MIN = 1;
+const uint16_t JOYSTICK_ANALOG_ACTIVE_LOW_PRESS_MAX = 10;
+const uint16_t JOYSTICK_ANALOG_ACTIVE_LOW_RELEASE_MIN = 30;
+const uint8_t JOYSTICK_ANALOG_SAMPLE_COUNT = 7;
+const uint8_t JOYSTICK_ANALOG_CONFIRM_COUNT = 3;
 
 // How long factory-reset and software-restart chords must be held
 #define MODE_RESET_MS 5000
 
 // Orientation of controller
 #define DEFAULT_BUTTON_MAP 3
-#define STARTUP_ORIENTATION_WINDOW_MS 500
 uint8_t buttonOrientation = DEFAULT_BUTTON_MAP;
 
 /*----- Persistent Settings -----*/
 const char SETTINGS_NAMESPACE[] = "motobuttons";
 const char SETTINGS_MODE_KEY[] = "mode";
-const char SETTINGS_ORIENTATION_KEY[] = "orientation";
 const char SETTINGS_OLED_KEY[] = "oled";
 
 // BLE configuration
@@ -226,12 +231,6 @@ const char *oledTransientText = nullptr;
 unsigned long oledTransientUntil = 0;
 char lastOledText[24] = "";
 
-// Raw joystick GPIOs used for startup orientation selection.
-const uint8_t JOYSTICK_PIN_UP = PIN_JOYSTICK_UP;
-const uint8_t JOYSTICK_PIN_DOWN = PIN_JOYSTICK_DOWN;
-const uint8_t JOYSTICK_PIN_LEFT = PIN_JOYSTICK_LEFT;
-const uint8_t JOYSTICK_PIN_RIGHT = PIN_JOYSTICK_RIGHT;
-
 #define DEBOUNCE_TIME_MS 120
 #define DIRECTION_REPEAT_INTERVAL_MS 100
 #define ABC_REPEAT_INTERVAL_MS 250
@@ -296,8 +295,104 @@ void setStatusLED(uint8_t brightness)
   analogWrite(STATUS_LED_PIN, STATUS_LED_ACTIVE_LOW ? 255 - brightness : brightness);
 }
 
+bool isJoystickAnalogPin(uint8_t pin)
+{
+  return pin == PIN_JOYSTICK_UP ||
+         pin == PIN_JOYSTICK_DOWN ||
+         pin == PIN_JOYSTICK_LEFT ||
+         pin == PIN_JOYSTICK_RIGHT ||
+         pin == PIN_BUTTON_CENTER;
+}
+
+struct JoystickAnalogFilter
+{
+  uint8_t pin;
+  bool state;
+  uint8_t pressCount;
+  uint8_t releaseCount;
+  int lastAdc;
+};
+
+JoystickAnalogFilter joystickAnalogFilters[] = {
+  {PIN_JOYSTICK_UP, false, 0, 0, -1},
+  {PIN_JOYSTICK_DOWN, false, 0, 0, -1},
+  {PIN_JOYSTICK_LEFT, false, 0, 0, -1},
+  {PIN_JOYSTICK_RIGHT, false, 0, 0, -1},
+  {PIN_BUTTON_CENTER, false, 0, 0, -1}
+};
+
+int8_t getJoystickAnalogFilterIndex(uint8_t pin)
+{
+  for (size_t i = 0; i < sizeof(joystickAnalogFilters) / sizeof(joystickAnalogFilters[0]); i++)
+  {
+    if (joystickAnalogFilters[i].pin == pin)
+      return i;
+  }
+  return -1;
+}
+
+int readFilteredJoystickAnalog(uint8_t pin)
+{
+  uint16_t samples[JOYSTICK_ANALOG_SAMPLE_COUNT];
+  for (uint8_t i = 0; i < JOYSTICK_ANALOG_SAMPLE_COUNT; i++)
+  {
+    samples[i] = analogRead(pin);
+    delayMicroseconds(80);
+  }
+
+  for (uint8_t i = 1; i < JOYSTICK_ANALOG_SAMPLE_COUNT; i++)
+  {
+    uint16_t value = samples[i];
+    int8_t j = i - 1;
+    while (j >= 0 && samples[j] > value)
+    {
+      samples[j + 1] = samples[j];
+      j--;
+    }
+    samples[j + 1] = value;
+  }
+
+  return samples[JOYSTICK_ANALOG_SAMPLE_COUNT / 2];
+}
+
 bool readButtonPin(uint8_t pin, bool activeLow)
 {
+  if (isJoystickAnalogPin(pin))
+  {
+    int8_t filterIndex = getJoystickAnalogFilterIndex(pin);
+    if (filterIndex < 0)
+      return false;
+
+    JoystickAnalogFilter *filter = &joystickAnalogFilters[filterIndex];
+    int analogValue = readFilteredJoystickAnalog(pin);
+    filter->lastAdc = analogValue;
+
+    if (activeLow)
+    {
+      if (analogValue >= JOYSTICK_ANALOG_ACTIVE_LOW_PRESS_MIN &&
+          analogValue <= JOYSTICK_ANALOG_ACTIVE_LOW_PRESS_MAX)
+      {
+        filter->pressCount++;
+        filter->releaseCount = 0;
+        if (filter->pressCount >= JOYSTICK_ANALOG_CONFIRM_COUNT)
+          filter->state = true;
+      }
+      else if (analogValue == 0 || analogValue >= JOYSTICK_ANALOG_ACTIVE_LOW_RELEASE_MIN)
+      {
+        filter->releaseCount++;
+        filter->pressCount = 0;
+        if (filter->releaseCount >= JOYSTICK_ANALOG_CONFIRM_COUNT)
+          filter->state = false;
+      }
+      else
+      {
+        filter->pressCount = 0;
+        filter->releaseCount = 0;
+      }
+      return filter->state;
+    }
+  }
+
   bool reading = digitalRead(pin);
   return activeLow ? !reading : reading;
 }
@@ -413,44 +508,6 @@ void indicateMode(Mode mode)
     updateOLEDStatus(true);
 }
 
-// At startup, the user can hold down a joystick direction to select an orientation
-// -1 indicates no valid selection was made
-int getButtonMapSelection()
-{
-  unsigned long startMs = millis();
-  int detectedSelection = -1;
-
-  while (millis() - startMs < STARTUP_ORIENTATION_WINDOW_MS)
-  {
-    // Read all four directions because we can only allow a mode switch if
-    // one direction is pressed
-    uint8_t up = readButtonPin(JOYSTICK_PIN_UP, BUTTON_UP_ACTIVE_LOW);
-    uint8_t down = readButtonPin(JOYSTICK_PIN_DOWN, BUTTON_DOWN_ACTIVE_LOW);
-    uint8_t left = readButtonPin(JOYSTICK_PIN_LEFT, BUTTON_LEFT_ACTIVE_LOW);
-    uint8_t right = readButtonPin(JOYSTICK_PIN_RIGHT, BUTTON_RIGHT_ACTIVE_LOW);
-
-    if (up + down + left + right > 1)
-      return -1;
-
-    if (up)
-      detectedSelection = 2;
-    else if (down)
-      detectedSelection = 0;
-    else if (left)
-      detectedSelection = 1;
-    else if (right)
-      detectedSelection = 3;
-
-    if (detectedSelection >= 0)
-      return detectedSelection;
-
-    delay(10);
-  }
-
-  // no selection was made during the startup window
-  return -1;
-}
-
 /* Change the logical joystick mapping based on a map specifier, buttMap.
  * This lets the controller be mounted in four orientations without rewiring.
  */
@@ -555,6 +612,20 @@ void initializeButtonState(uint8_t button, bool activeLow, bool *state, bool *pr
   *priorState = reading;
   *buttonFlipped = false;
   *debounceTime = millis();
+}
+
+void configureInputPull(uint8_t pin, bool activeLow)
+{
+  if (activeLow)
+  {
+    gpio_pullup_en((gpio_num_t)pin);
+    gpio_pulldown_dis((gpio_num_t)pin);
+  }
+  else
+  {
+    gpio_pullup_dis((gpio_num_t)pin);
+    gpio_pulldown_en((gpio_num_t)pin);
+  }
 }
 
 void clearKeyReport()
@@ -1095,6 +1166,15 @@ void setupDigitalIO()
   pinMode(BUTTON_B, BUTTON_B_ACTIVE_LOW ? INPUT_PULLUP : INPUT_PULLDOWN);
   pinMode(BUTTON_C, BUTTON_C_ACTIVE_LOW ? INPUT_PULLUP : INPUT_PULLDOWN);
 
+  configureInputPull(BUTTON_UP, BUTTON_UP_ACTIVE_LOW);
+  configureInputPull(BUTTON_DOWN, BUTTON_DOWN_ACTIVE_LOW);
+  configureInputPull(BUTTON_LEFT, BUTTON_LEFT_ACTIVE_LOW);
+  configureInputPull(BUTTON_RIGHT, BUTTON_RIGHT_ACTIVE_LOW);
+  configureInputPull(BUTTON_CENTER, BUTTON_CENTER_ACTIVE_LOW);
+  configureInputPull(BUTTON_A, BUTTON_A_ACTIVE_LOW);
+  configureInputPull(BUTTON_B, BUTTON_B_ACTIVE_LOW);
+  configureInputPull(BUTTON_C, BUTTON_C_ACTIVE_LOW);
+
   pinMode(STATUS_LED_PIN, OUTPUT);
   setStatusLED(0);
 
@@ -1115,7 +1195,6 @@ bool writeSettings()
     return false;
 
   bool success = preferences.putUChar(SETTINGS_MODE_KEY, (uint8_t)currentMode) == sizeof(uint8_t) &&
-                 preferences.putUChar(SETTINGS_ORIENTATION_KEY, buttonOrientation) == sizeof(uint8_t) &&
                  preferences.putBool(SETTINGS_OLED_KEY, oledEnabled);
   preferences.end();
 
@@ -1132,14 +1211,12 @@ bool readSettings()
     return false;
 
   bool complete = preferences.isKey(SETTINGS_MODE_KEY) &&
-                  preferences.isKey(SETTINGS_ORIENTATION_KEY) &&
                   preferences.isKey(SETTINGS_OLED_KEY);
   uint8_t savedMode = preferences.getUChar(SETTINGS_MODE_KEY, 0);
-  uint8_t savedOrientation = preferences.getUChar(SETTINGS_ORIENTATION_KEY, 0xFF);
   bool savedOLEDEnabled = preferences.getBool(SETTINGS_OLED_KEY, true);
   preferences.end();
 
-  if (!complete || savedMode < DMD2 || savedMode > MEDIA || savedOrientation > 3)
+  if (!complete || savedMode < DMD2 || savedMode > MEDIA)
   {
     if (DEBUG)
       Serial.println("Settings missing or invalid; restoring defaults.");
@@ -1148,17 +1225,13 @@ bool readSettings()
   }
 
   currentMode = (Mode)savedMode;
-  buttonOrientation = savedOrientation;
   oledEnabled = savedOLEDEnabled;
-  setButtonMapping(buttonOrientation);
   setOLEDEnabled(oledEnabled);
 
   if (DEBUG)
   {
     Serial.print("Saved mode: ");
     Serial.println(savedMode);
-    Serial.print("Saved device orientation: ");
-    Serial.println(savedOrientation);
     Serial.print("Saved OLED state: ");
     Serial.println(savedOLEDEnabled ? "enabled" : "disabled");
   }
@@ -1218,6 +1291,8 @@ void setup()
   applyDefaultSettings();
   setupDigitalIO();
   setupOLED();
+  renderOLEDText("Booting...");
+  delay(OLED_BOOT_MESSAGE_MS);
   updateOLEDStatus(true);
 
   if (DEBUG)
@@ -1230,23 +1305,11 @@ void setup()
   }
 
   bool settingsLoaded = readSettings();
+  buttonOrientation = DEFAULT_BUTTON_MAP;
+  setButtonMapping(buttonOrientation);
 
-  // Let the user change the orientation by holding one joystick direction
-  // during the first part of startup.
-  int buttonMap = getButtonMapSelection();
-  if (buttonMap >= 0)
-  {
-    buttonOrientation = (uint8_t)buttonMap;
-    setButtonMapping(buttonOrientation);
-    if (DEBUG)
-    {
-      Serial.print("Button orientation changed to: ");
-      Serial.println(buttonOrientation);
-    }
-  }
-
-  // Create or repair settings, and persist a startup orientation override.
-  if (!settingsLoaded || buttonMap >= 0)
+  // Create or repair settings.
+  if (!settingsLoaded)
     writeSettings();
 
   // Refresh logical state after the final orientation mapping is known.
