@@ -71,3 +71,6 @@ If something is unclear, please read [the original author's manuals](https://git
 
 ## Code
 See the [programming instructions](Programming/README.md).
+
+## References
+- https://github.com/sigmdel/mini_esp32c3_oled_sketches

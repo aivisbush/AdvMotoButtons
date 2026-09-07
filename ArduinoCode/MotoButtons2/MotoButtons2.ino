@@ -40,10 +40,10 @@ const uint8_t PIN_JOYSTICK_RIGHT = 10;
 // GPIO20 = RX, free
 // GPIO21 = TX, free
 
-const bool BUTTON_UP_ACTIVE_LOW = false;
-const bool BUTTON_DOWN_ACTIVE_LOW = false;
-const bool BUTTON_LEFT_ACTIVE_LOW = false;
-const bool BUTTON_RIGHT_ACTIVE_LOW = false;
+const bool BUTTON_UP_ACTIVE_LOW = true;
+const bool BUTTON_DOWN_ACTIVE_LOW = true;
+const bool BUTTON_LEFT_ACTIVE_LOW = true;
+const bool BUTTON_RIGHT_ACTIVE_LOW = true;
 const bool BUTTON_CENTER_ACTIVE_LOW = true;
 const bool BUTTON_A_ACTIVE_LOW = false;
 const bool BUTTON_B_ACTIVE_LOW = false;
