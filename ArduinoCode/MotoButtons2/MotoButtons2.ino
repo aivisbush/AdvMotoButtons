@@ -4,13 +4,15 @@ Version: 2.0 with support for the following modes: DMD2, OsmAnd, media (music)
 Device: Seeed XIAO ESP32C3 (MotoButtons 2)
 *********************************************************************/
 #include <Arduino.h>
+#include <Wire.h>
 #include <NimBLEDevice.h>
 #include <NimBLEHIDDevice.h>
 #include <Preferences.h>
 #include <esp_system.h>
+#include <U8g2lib.h>
 
 // Enable serial debugging (turn this off if not connected to PC)
-#define DEBUG false
+#define DEBUG true
 
 // How long factory-reset and software-restart chords must be held
 #define MODE_RESET_MS 5000
@@ -24,11 +26,11 @@ uint8_t buttonOrientation = DEFAULT_BUTTON_MAP;
 const char SETTINGS_NAMESPACE[] = "motobuttons";
 const char SETTINGS_MODE_KEY[] = "mode";
 const char SETTINGS_ORIENTATION_KEY[] = "orientation";
-const char SETTINGS_BRIGHTNESS_KEY[] = "brightness";
+const char SETTINGS_OLED_KEY[] = "oled";
 
 // BLE configuration
 #define BLE_TX_POWER 9
-const char BLE_DEVICE_NAME[] = "Bush Moto BT14";
+const char BLE_DEVICE_NAME[] = "Bush Moto OLED";
 const char BLE_DEVICE_MODEL[] = "Btns v2.0";
 const char BLE_MANUFACTURER[] = "Bush";
 volatile bool BLE_connected = false;
@@ -82,29 +84,6 @@ const uint8_t HID_REPORT_DESCRIPTOR[] = {
   0xC0              // End Collection
 };
 
-// RGB LED colors plus off
-typedef enum
-{
-  Red,
-  Blue,    // BLE connected (flashing, BLE not connected)
-  Green,   // OsmAnd mode
-  Magenta, // media mode
-  White,   // regular key press
-  Off,
-} Color;
-
-Color priorLEDState = Off;
-Color LEDState = Off;
-
-#define BLE_COLOR Blue
-#define DMD2_MODE_COLOR Blue
-#define OSMAND_MODE_COLOR Green
-#define MEDIA_MODE_COLOR Magenta
-#define KEY_PRESS_COLOR White
-#define POWER_ON_COLOR Red
-#define SETUP_COMPLETE_COLOR White
-#define BUTTON_ORIENTATION_COLOR Red
-
 /*
  * --------------------- MODE CONFIGURATION ----------------------------
  * 	DMD2: up/down/left/right arrows, enter, F6 and F7
@@ -127,7 +106,6 @@ bool modeButtonsReleased = true;
 bool modeComboConsumed = false;
 bool formatComboConsumed = false;
 bool restartComboConsumed = false;
-bool brightnessSettingsDirty = false;
 
 /* DMD2 Mode Configuration */
 // USB HID usage IDs used in keyboard reports.
@@ -196,9 +174,9 @@ bool forceKeyReport = false; // used to force another key report for key up acti
 // Note: GPIO2/D0, GPIO8/D8, and GPIO9/D9 are ESP32-C3 boot strapping pins.
 // This wiring uses D8/D9 for buttons, so avoid holding DOWN or CENTER while
 // powering on or entering upload mode.
-const uint8_t PIN_JOYSTICK_UP = D3;
-const uint8_t PIN_JOYSTICK_DOWN = D8;
-const uint8_t PIN_JOYSTICK_LEFT = D4;
+const uint8_t PIN_JOYSTICK_UP = 0;
+const uint8_t PIN_JOYSTICK_DOWN = 2;
+const uint8_t PIN_JOYSTICK_LEFT = 1;
 const uint8_t PIN_JOYSTICK_RIGHT = D10;
 const uint8_t PIN_BUTTON_CENTER = D9;
 const uint8_t PIN_BUTTON_A = D5;
@@ -221,12 +199,21 @@ const bool BUTTON_CENTER_ACTIVE_LOW = true;
 const bool BUTTON_A_ACTIVE_LOW = false;
 const bool BUTTON_B_ACTIVE_LOW = false;
 const bool BUTTON_C_ACTIVE_LOW = false;
-uint8_t RGB_LED_RED = D0;
-uint8_t RGB_LED_GREEN = D7;
-uint8_t RGB_LED_BLUE = D6;
-#define USER_LED_ENABLED false
-#define USER_LED_PIN 255
-#define USER_LED_ACTIVE_LOW true
+
+const uint8_t OLED_SDA_PIN = 5;
+const uint8_t OLED_SCL_PIN = 6;
+const uint8_t STATUS_LED_PIN = 8;
+const bool STATUS_LED_ACTIVE_LOW = true;
+const uint16_t STATUS_LED_PULSE_PERIOD_MS = 1200;
+const uint16_t OLED_TRANSIENT_MS = 2000;
+
+U8G2_SSD1306_72X40_ER_F_HW_I2C oled(U8G2_R0, U8X8_PIN_NONE, OLED_SCL_PIN, OLED_SDA_PIN);
+bool oledEnabled = true;
+bool oledAwake = false;
+bool displayComboConsumed = false;
+const char *oledTransientText = nullptr;
+unsigned long oledTransientUntil = 0;
+char lastOledText[24] = "";
 
 // Raw joystick GPIOs used for startup orientation selection.
 const uint8_t JOYSTICK_PIN_UP = PIN_JOYSTICK_UP;
@@ -275,18 +262,27 @@ unsigned long button_center_time = 0;
 unsigned long button_A_time = 0;
 unsigned long button_B_time = 0;
 unsigned long button_C_time = 0;
-// LED brightness 0 - 255 (100% - 0%)
-int LEDbrightness = 0;
-unsigned long brightnessAdjustTime = 0;
-bool brightnessComboConsumed = false;
 unsigned long lastRepeatTime = 0;
 /*------------------- END BUTTON CONFIG & LOGIC-----------------------*/
-void setUserLED(bool on)
-{
-  if (!USER_LED_ENABLED)
-    return;
 
-  digitalWrite(USER_LED_PIN, (USER_LED_ACTIVE_LOW ? !on : on) ? HIGH : LOW);
+const char *getModeName(Mode mode)
+{
+  switch (mode)
+  {
+  case DMD2:
+    return "DMD";
+  case OsmAnd:
+    return "OsmAnd";
+  case MEDIA:
+    return "Media";
+  default:
+    return "?";
+  }
+}
+
+void setStatusLED(uint8_t brightness)
+{
+  analogWrite(STATUS_LED_PIN, STATUS_LED_ACTIVE_LOW ? 255 - brightness : brightness);
 }
 
 bool readButtonPin(uint8_t pin, bool activeLow)
@@ -295,147 +291,115 @@ bool readButtonPin(uint8_t pin, bool activeLow)
   return activeLow ? !reading : reading;
 }
 
-/*
-  Set the color of the RGB LED to one of the 7 possibilities, plus off
-  For a common anode(+) LED, LOW is ON and HIGH is OFF.
-*/
-void setRGBColor(Color color)
+void setupOLED()
 {
-  priorLEDState = LEDState;
-
-  // convert a "normal" 0..255 channel intensity into the common-anode
-  // analogWrite value, taking LEDbrightness (0..255, 0==full on, 255==off) into account.
-  auto rgbAnalog = [](uint8_t channel)->uint8_t {
-    // brightnessPercent = (255 - LEDbrightness)/255
-    // analog = 255 - channel * brightnessPercent
-    return (uint8_t)(255 - (((uint16_t)channel * (255 - LEDbrightness) + 127) / 255));
-  };
-
-  switch (color)
-  {
-  case Red:
-    LEDState = Red;
-    analogWrite(RGB_LED_RED, rgbAnalog(255));
-    analogWrite(RGB_LED_BLUE, rgbAnalog(0));
-    analogWrite(RGB_LED_GREEN, rgbAnalog(0));
-    break;
-  case Blue:
-    LEDState = Blue;
-    analogWrite(RGB_LED_RED, rgbAnalog(0));
-    analogWrite(RGB_LED_BLUE, rgbAnalog(255));
-    analogWrite(RGB_LED_GREEN, rgbAnalog(0));
-    break;
-  case Green:
-    LEDState = Green;
-    analogWrite(RGB_LED_RED, rgbAnalog(0));
-    analogWrite(RGB_LED_BLUE, rgbAnalog(0));
-    analogWrite(RGB_LED_GREEN, rgbAnalog(255));
-    break;
-  case Magenta:
-    LEDState = Magenta;
-    // keep existing slight-dim behavior (~245) for magenta
-    analogWrite(RGB_LED_RED, rgbAnalog(245));
-    analogWrite(RGB_LED_BLUE, rgbAnalog(245));
-    analogWrite(RGB_LED_GREEN, rgbAnalog(0));
-    break;
-  case White:
-    LEDState = White;
-    // keep existing slight-dim behavior (~245) for white
-    analogWrite(RGB_LED_RED, rgbAnalog(245));
-    analogWrite(RGB_LED_BLUE, rgbAnalog(245));
-    analogWrite(RGB_LED_GREEN, rgbAnalog(245));
-    break;
-  case Off:
-  default:
-    LEDState = Off;
-    analogWrite(RGB_LED_RED, rgbAnalog(0));
-    analogWrite(RGB_LED_BLUE, rgbAnalog(0));
-    analogWrite(RGB_LED_GREEN, rgbAnalog(0));
-  }
+  Wire.begin(OLED_SDA_PIN, OLED_SCL_PIN);
+  oled.begin();
+  oled.setContrast(255);
+  oledAwake = true;
 }
 
-void flashLED(Color color, uint16_t delayMs, uint16_t durationMs)
+void setOLEDEnabled(bool enabled)
 {
-  uint8_t N = durationMs / delayMs;
-
-  priorLEDState = LEDState;
-  LEDState = color;
-
-  for (uint8_t i = 0; i < 2 * (N + 1); i++)
+  oledEnabled = enabled;
+  lastOledText[0] = '\0';
+  if (oledEnabled)
   {
-    if (i % 2 == 0)
-      setRGBColor(Off);
+    oled.setPowerSave(0);
+    oledAwake = true;
+    return;
+  }
+
+  oled.clearBuffer();
+  oled.sendBuffer();
+  oled.setPowerSave(1);
+  oledAwake = false;
+}
+
+void renderOLEDText(const char *text)
+{
+  if (!oledEnabled)
+    return;
+
+  if (!oledAwake)
+  {
+    oled.setPowerSave(0);
+    oledAwake = true;
+  }
+
+  if (strncmp(lastOledText, text, sizeof(lastOledText)) == 0)
+    return;
+
+  strncpy(lastOledText, text, sizeof(lastOledText) - 1);
+  lastOledText[sizeof(lastOledText) - 1] = '\0';
+
+  oled.clearBuffer();
+  oled.setFont(u8g2_font_7x14B_tr);
+  uint16_t textWidth = oled.getStrWidth(text);
+  int16_t x = textWidth < 72 ? (72 - textWidth) / 2 : 0;
+  oled.drawStr(x, 26, text);
+  oled.sendBuffer();
+}
+
+void showOLEDTransient(const char *text, uint16_t durationMs)
+{
+  oledTransientText = text;
+  oledTransientUntil = millis() + durationMs;
+  renderOLEDText(text);
+}
+
+void updateOLEDStatus(bool force = false)
+{
+  if (!oledEnabled)
+  {
+    if (force)
+      setOLEDEnabled(false);
+    return;
+  }
+
+  const char *text = "Connecting...";
+  if (BLE_connected)
+  {
+    if (oledTransientText != nullptr && millis() < oledTransientUntil)
+      text = oledTransientText;
     else
-      setRGBColor(color);
-    delay(delayMs / 2);
+    {
+      oledTransientText = nullptr;
+      text = getModeName(currentMode);
+    }
   }
+  else
+  {
+    oledTransientText = nullptr;
+  }
+
+  if (force)
+    lastOledText[0] = '\0';
+  renderOLEDText(text);
 }
 
-void restoreLEDState()
+void updateStatusLED()
 {
-  setRGBColor(priorLEDState);
-  LEDState = priorLEDState;
+  if (BLE_connected)
+  {
+    setStatusLED(255);
+    return;
+  }
+
+  uint16_t phase = millis() % STATUS_LED_PULSE_PERIOD_MS;
+  uint16_t halfPeriod = STATUS_LED_PULSE_PERIOD_MS / 2;
+  uint8_t brightness = phase < halfPeriod
+                         ? map(phase, 0, halfPeriod, 0, 255)
+                         : map(phase, halfPeriod, STATUS_LED_PULSE_PERIOD_MS, 255, 0);
+  setStatusLED(brightness);
 }
 
 void indicateMode(Mode mode)
 {
-  // Indicate the new mode
-  switch (mode)
-  {
-  case DMD2:
-    flashLED(DMD2_MODE_COLOR, 1000, 200);
-    setRGBColor(DMD2_MODE_COLOR);
-    break;
-  case OsmAnd:
-    flashLED(OSMAND_MODE_COLOR, 1000, 200);
-    setRGBColor(OSMAND_MODE_COLOR);
-    break;
-  case MEDIA:
-    flashLED(MEDIA_MODE_COLOR, 1000, 200);
-    setRGBColor(MEDIA_MODE_COLOR);
-    break;
-  default:
-    setRGBColor(Red);
-  }
-}
-
-void showMode(Mode mode)
-{
-  // Indicate the new mode
-  switch (mode)
-  {
-  case DMD2:
-    setRGBColor(DMD2_MODE_COLOR);
-    break;
-  case OsmAnd:
-    setRGBColor(OSMAND_MODE_COLOR);
-    break;
-  case MEDIA:
-    setRGBColor(MEDIA_MODE_COLOR);
-    break;
-  default:
-    setRGBColor(Red);
-  }
-}
-
-void RGBToggle(Color color)
-{
-  // Treat LED as "on" when a color (not Off) is active.
-  if (LEDState == Off)
-    setRGBColor(color);
+  if (BLE_connected)
+    renderOLEDText(getModeName(mode));
   else
-    setRGBColor(Off);
-}
-
-// cycle through all colors of the LED for demo purposes
-void colorCycle(uint16_t N)
-{
-  const uint8_t COLOR_COUNT = 6;
-  for (uint32_t i = 0; i < N * COLOR_COUNT; i++)
-  {
-    setRGBColor((Color)(i % COLOR_COUNT));
-    delay(500);
-  }
+    updateOLEDStatus(true);
 }
 
 // At startup, the user can hold down a joystick direction to select an orientation
@@ -623,7 +587,7 @@ void applyDefaultSettings()
 {
   currentMode = DEFAULT_MODE;
   buttonOrientation = DEFAULT_BUTTON_MAP;
-  LEDbrightness = 0;
+  oledEnabled = true;
   setButtonMapping(buttonOrientation);
 }
 
@@ -677,9 +641,7 @@ bool handleFormatCombo()
   clearABCButtonFlips();
   modeButtonsReleased = false;
   modeComboConsumed = false;
-  brightnessAdjustTime = 0;
-  brightnessComboConsumed = false;
-  brightnessSettingsDirty = false;
+  displayComboConsumed = false;
   keyReportChanged = false;
   forceKeyReport = false;
 
@@ -698,8 +660,8 @@ bool handleFormatCombo()
       Serial.print("BLE bonds cleared: ");
       Serial.println(bondsCleared);
     }
-    flashLED(Red, 500, 2000);
-    delay(100);
+    showOLEDTransient("Reset completed", OLED_TRANSIENT_MS);
+    delay(OLED_TRANSIENT_MS);
     ESP.restart();
   }
   return true;
@@ -785,47 +747,36 @@ void handleModeCycleCombo()
   }
 }
 
-void handleBrightnessCombo()
+void handleDisplayToggleCombo()
 {
-  if (button_A_state && button_B_state)
+  if (button_A_state && button_B_state && !button_C_state)
   {
-    unsigned long brightnessHoldMs = millis() - max(button_A_time, button_B_time);
-    if (brightnessHoldMs > MODE_TOGGLE_MS && (brightnessAdjustTime == 0 || millis() - brightnessAdjustTime >= 200))
+    unsigned long displayHoldMs = millis() - max(button_A_time, button_B_time);
+    if (displayHoldMs > MODE_TOGGLE_MS && !displayComboConsumed)
     {
-      LEDbrightness = LEDbrightness - 20;
-      if (LEDbrightness < 0)
-        LEDbrightness = 255;
-      brightnessAdjustTime = millis();
-      if (!brightnessComboConsumed)
-        releaseAllKeys();
-      brightnessComboConsumed = true;
-      brightnessSettingsDirty = true;
+      releaseAllKeys();
+      displayComboConsumed = true;
       button_A_flipped = false;
       button_B_flipped = false;
-
-      setRGBColor(LEDState);
+      setOLEDEnabled(!oledEnabled);
+      updateOLEDStatus(true);
+      writeSettings();
       if (DEBUG)
       {
-        Serial.print("LED brightness changed to ");
-        Serial.println(LEDbrightness);
+        Serial.print("OLED ");
+        Serial.println(oledEnabled ? "enabled" : "disabled");
       }
     }
   }
   else
   {
-    brightnessAdjustTime = 0;
-    if (brightnessComboConsumed)
+    if (displayComboConsumed)
     {
       button_A_flipped = false;
       button_B_flipped = false;
       if (!button_A_state && !button_B_state)
       {
-        brightnessComboConsumed = false;
-        if (brightnessSettingsDirty)
-        {
-          writeSettings();
-          brightnessSettingsDirty = false;
-        }
+        displayComboConsumed = false;
       }
     }
   }
@@ -891,13 +842,13 @@ void updateButtons()
   handleModeCycleCombo();
   /*------------------------------------------------------------------*/
 
-  /*------------------- Changing LED brightness --------------------------*/
-  handleBrightnessCombo();
+  /*------------------- Toggle OLED display -----------------------------*/
+  handleDisplayToggleCombo();
   /*------------------------------------------------------------------*/
 
   // Once a chord action has fired, suppress its component buttons until
   // every button in the chord has been released.
-  if (modeComboConsumed || brightnessComboConsumed)
+  if (modeComboConsumed || displayComboConsumed)
   {
     keyReportChanged = false;
     forceKeyReport = false;
@@ -1133,13 +1084,8 @@ void setupDigitalIO()
   pinMode(BUTTON_B, BUTTON_B_ACTIVE_LOW ? INPUT_PULLUP : INPUT_PULLDOWN);
   pinMode(BUTTON_C, BUTTON_C_ACTIVE_LOW ? INPUT_PULLUP : INPUT_PULLDOWN);
 
-  pinMode(RGB_LED_RED, OUTPUT);
-  pinMode(RGB_LED_BLUE, OUTPUT);
-  pinMode(RGB_LED_GREEN, OUTPUT);
-
-  if (USER_LED_ENABLED)
-    pinMode(USER_LED_PIN, OUTPUT);
-  setUserLED(false);
+  pinMode(STATUS_LED_PIN, OUTPUT);
+  setStatusLED(0);
 
   initializeButtonState(BUTTON_UP, BUTTON_UP_ACTIVE_LOW, &button_up_state, &button_up_state_prior, &button_up_flipped, &button_up_time);
   initializeButtonState(BUTTON_DOWN, BUTTON_DOWN_ACTIVE_LOW, &button_down_state, &button_down_state_prior, &button_down_flipped, &button_down_time);
@@ -1159,7 +1105,7 @@ bool writeSettings()
 
   bool success = preferences.putUChar(SETTINGS_MODE_KEY, (uint8_t)currentMode) == sizeof(uint8_t) &&
                  preferences.putUChar(SETTINGS_ORIENTATION_KEY, buttonOrientation) == sizeof(uint8_t) &&
-                 preferences.putUChar(SETTINGS_BRIGHTNESS_KEY, (uint8_t)LEDbrightness) == sizeof(uint8_t);
+                 preferences.putBool(SETTINGS_OLED_KEY, oledEnabled);
   preferences.end();
 
   if (DEBUG)
@@ -1176,10 +1122,10 @@ bool readSettings()
 
   bool complete = preferences.isKey(SETTINGS_MODE_KEY) &&
                   preferences.isKey(SETTINGS_ORIENTATION_KEY) &&
-                  preferences.isKey(SETTINGS_BRIGHTNESS_KEY);
+                  preferences.isKey(SETTINGS_OLED_KEY);
   uint8_t savedMode = preferences.getUChar(SETTINGS_MODE_KEY, 0);
   uint8_t savedOrientation = preferences.getUChar(SETTINGS_ORIENTATION_KEY, 0xFF);
-  uint8_t savedBrightness = preferences.getUChar(SETTINGS_BRIGHTNESS_KEY, 0);
+  bool savedOLEDEnabled = preferences.getBool(SETTINGS_OLED_KEY, true);
   preferences.end();
 
   if (!complete || savedMode < DMD2 || savedMode > MEDIA || savedOrientation > 3)
@@ -1192,9 +1138,9 @@ bool readSettings()
 
   currentMode = (Mode)savedMode;
   buttonOrientation = savedOrientation;
-  LEDbrightness = savedBrightness;
+  oledEnabled = savedOLEDEnabled;
   setButtonMapping(buttonOrientation);
-  setRGBColor(LEDState);
+  setOLEDEnabled(oledEnabled);
 
   if (DEBUG)
   {
@@ -1202,8 +1148,8 @@ bool readSettings()
     Serial.println(savedMode);
     Serial.print("Saved device orientation: ");
     Serial.println(savedOrientation);
-    Serial.print("Saved LED brightness: ");
-    Serial.println(savedBrightness);
+    Serial.print("Saved OLED state: ");
+    Serial.println(savedOLEDEnabled ? "enabled" : "disabled");
   }
   return true;
 }
@@ -1260,7 +1206,8 @@ void setup()
 {
   applyDefaultSettings();
   setupDigitalIO();
-  setRGBColor(POWER_ON_COLOR);
+  setupOLED();
+  updateOLEDStatus(true);
 
   if (DEBUG)
   {
@@ -1280,7 +1227,6 @@ void setup()
   {
     buttonOrientation = (uint8_t)buttonMap;
     setButtonMapping(buttonOrientation);
-    flashLED(BUTTON_ORIENTATION_COLOR, 250, 250 * (buttonOrientation + 1));
     if (DEBUG)
     {
       Serial.print("Button orientation changed to: ");
@@ -1298,13 +1244,15 @@ void setup()
 
   if (DEBUG)
     Serial.println("Setup complete; advertising BLE HID device.");
-  setRGBColor(SETUP_COMPLETE_COLOR);
-  indicateMode(currentMode);
+  updateOLEDStatus(true);
 }
 
 void loop()
 {
   static bool connectionIndicated = false;
+
+  updateStatusLED();
+  updateOLEDStatus();
 
   if (BLE_connected)
   {
@@ -1312,7 +1260,7 @@ void loop()
     {
       if (DEBUG)
         Serial.println("BLE connected to host.");
-      showMode(currentMode);
+      showOLEDTransient("Connected", OLED_TRANSIENT_MS);
       connectionIndicated = true;
       keyReportChanged = true;
     }
@@ -1326,8 +1274,6 @@ void loop()
       forceKeyReport = false;
       connectionIndicated = false;
     }
-    RGBToggle(BLE_COLOR);
-    delay(200);
   }
 
   updateButtons();
