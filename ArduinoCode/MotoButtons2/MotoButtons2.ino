@@ -1,7 +1,7 @@
 /*********************************************************************
 License: GNU GENERAL PUBLIC LICENSE; Version 3, 29 June 2007
 Version: 2.0 with support for the following modes: DMD2, OsmAnd, media (music)
-Device: Seeed XIAO ESP32C3 (MotoButtons 2)
+Device: ESP32-C3 OLED Mini (MotoButtons 2)
 *********************************************************************/
 #include <Arduino.h>
 #include <Wire.h>
@@ -13,6 +13,45 @@ Device: Seeed XIAO ESP32C3 (MotoButtons 2)
 
 // Enable serial debugging (turn this off if not connected to PC)
 #define DEBUG true
+
+/*
+ * --------------------- HARDWARE PIN MAPPING -------------------------
+ * ESP32-C3 OLED Mini board labels match raw GPIO numbers.
+ * Use GPIO numbers here instead of Arduino D aliases because D aliases
+ * change depending on the selected Arduino board profile.
+ *
+ * GPIO2, GPIO8, and GPIO9 are ESP32-C3 boot strapping pins. Avoid holding
+ * inputs wired to those pins while powering on, resetting, or entering
+ * upload mode.
+ *
+ * GPIO20 = RX and GPIO21 = TX are left free.
+ */
+const uint8_t PIN_BUTTON_A = 0;
+const uint8_t PIN_BUTTON_B = 1;
+const uint8_t PIN_BUTTON_C = 2;
+const uint8_t PIN_JOYSTICK_DOWN = 3;
+const uint8_t PIN_JOYSTICK_LEFT = 4;
+const uint8_t OLED_SDA_PIN = 5;     // GPIO5 reserved by onboard OLED
+const uint8_t OLED_SCL_PIN = 6;     // GPIO6 reserved by onboard OLED
+const uint8_t PIN_JOYSTICK_UP = 7;
+const uint8_t STATUS_LED_PIN = 8;   // GPIO8 reserved by onboard/status LED
+const uint8_t PIN_BUTTON_CENTER = 9;
+const uint8_t PIN_JOYSTICK_RIGHT = 10;
+// GPIO20 = RX, free
+// GPIO21 = TX, free
+
+const bool BUTTON_UP_ACTIVE_LOW = false;
+const bool BUTTON_DOWN_ACTIVE_LOW = false;
+const bool BUTTON_LEFT_ACTIVE_LOW = false;
+const bool BUTTON_RIGHT_ACTIVE_LOW = false;
+const bool BUTTON_CENTER_ACTIVE_LOW = true;
+const bool BUTTON_A_ACTIVE_LOW = false;
+const bool BUTTON_B_ACTIVE_LOW = false;
+const bool BUTTON_C_ACTIVE_LOW = false;
+
+const bool STATUS_LED_ACTIVE_LOW = true;
+const uint16_t STATUS_LED_PULSE_PERIOD_MS = 1200;
+const uint16_t OLED_TRANSIENT_MS = 2000;
 
 // How long factory-reset and software-restart chords must be held
 #define MODE_RESET_MS 5000
@@ -170,19 +209,6 @@ uint8_t keyReport[N_KEY_REPORT] = {HID_KEY_NONE, HID_KEY_NONE, HID_KEY_NONE, HID
 bool keyReportChanged = false;
 bool forceKeyReport = false; // used to force another key report for key up activation events
 
-// Seeed XIAO ESP32C3 pin mapping, matching the existing MotoButtons wiring.
-// Note: GPIO2/D0, GPIO8/D8, and GPIO9/D9 are ESP32-C3 boot strapping pins.
-// This wiring uses D8/D9 for buttons, so avoid holding DOWN or CENTER while
-// powering on or entering upload mode.
-const uint8_t PIN_JOYSTICK_UP = 0;
-const uint8_t PIN_JOYSTICK_DOWN = 2;
-const uint8_t PIN_JOYSTICK_LEFT = 1;
-const uint8_t PIN_JOYSTICK_RIGHT = D10;
-const uint8_t PIN_BUTTON_CENTER = D9;
-const uint8_t PIN_BUTTON_A = D5;
-const uint8_t PIN_BUTTON_B = D2;
-const uint8_t PIN_BUTTON_C = D1;
-
 uint8_t BUTTON_UP = PIN_JOYSTICK_UP;
 uint8_t BUTTON_DOWN = PIN_JOYSTICK_DOWN;
 uint8_t BUTTON_LEFT = PIN_JOYSTICK_LEFT;
@@ -191,21 +217,6 @@ uint8_t BUTTON_CENTER = PIN_BUTTON_CENTER;
 uint8_t BUTTON_A = PIN_BUTTON_A;
 uint8_t BUTTON_B = PIN_BUTTON_B;
 uint8_t BUTTON_C = PIN_BUTTON_C;
-const bool BUTTON_UP_ACTIVE_LOW = false;
-const bool BUTTON_DOWN_ACTIVE_LOW = false;
-const bool BUTTON_LEFT_ACTIVE_LOW = false;
-const bool BUTTON_RIGHT_ACTIVE_LOW = false;
-const bool BUTTON_CENTER_ACTIVE_LOW = true;
-const bool BUTTON_A_ACTIVE_LOW = false;
-const bool BUTTON_B_ACTIVE_LOW = false;
-const bool BUTTON_C_ACTIVE_LOW = false;
-
-const uint8_t OLED_SDA_PIN = 5;
-const uint8_t OLED_SCL_PIN = 6;
-const uint8_t STATUS_LED_PIN = 8;
-const bool STATUS_LED_ACTIVE_LOW = true;
-const uint16_t STATUS_LED_PULSE_PERIOD_MS = 1200;
-const uint16_t OLED_TRANSIENT_MS = 2000;
 
 U8G2_SSD1306_72X40_ER_F_HW_I2C oled(U8G2_R0, U8X8_PIN_NONE, OLED_SCL_PIN, OLED_SDA_PIN);
 bool oledEnabled = true;
