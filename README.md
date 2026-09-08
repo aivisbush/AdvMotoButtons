@@ -58,7 +58,7 @@ Standard button functionality by mode:
 - Joystick Middle press - Mute
 
 Special functions:
-- Hold joystick up button when powering on device, it will select correct orientation
+- Hold a single joystick direction alone for 3 secs - that direction becomes UP (joystick orientation is saved); the display shows "Orientation is set" plus which direction is now UP (e.g. "UP is LEFT") for 5 secs
 - Button A+B long press - LED brightness changes; hold it until you are satisfied and release
 - Button B+C long press - Mode change: DMD2 (blue) -> OsmAnd (green) -> Media (magenta)
 - Button A+B+C long press (5 secs) - Reset saved settings and Bluetooth bonds. Use this if automatic reconnection stops working
