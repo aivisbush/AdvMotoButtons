@@ -64,9 +64,6 @@ const uint8_t JOYSTICK_ANALOG_CONFIRM_COUNT = 3;
 // How long factory-reset and software-restart chords must be held
 #define MODE_RESET_MS 5000
 
-// How long a single joystick direction must be held to become the new UP
-#define ORIENTATION_SET_MS 3000
-
 // Orientation of controller
 #define DEFAULT_BUTTON_MAP 3
 uint8_t buttonOrientation = DEFAULT_BUTTON_MAP;
@@ -232,13 +229,24 @@ U8G2_SSD1306_72X40_ER_F_HW_I2C oled(U8G2_R0, U8X8_PIN_NONE, OLED_SCL_PIN, OLED_S
 const uint8_t OLED_WIDTH = 72;
 const uint8_t OLED_HEIGHT = 40;
 const uint8_t OLED_MAX_LINES = 3;
+// Button overlay bar across the top, with the message area below it.
+const uint8_t OLED_BAR_SLOTS = 8;
+const uint8_t OLED_BAR_SLOT_WIDTH = OLED_WIDTH / OLED_BAR_SLOTS;
+const uint8_t OLED_BAR_CENTER_Y = 4;
+const uint8_t OLED_BAR_SEPARATOR_Y = 10;
+const uint8_t OLED_TEXT_TOP = 12;
 bool oledEnabled = true;
 bool oledAwake = false;
 bool displayComboConsumed = false;
-bool orientationComboConsumed = false;
+// Transient priority: a lower-priority message cannot cut short a higher one.
+const uint8_t OLED_PRIORITY_NORMAL = 0;
+const uint8_t OLED_PRIORITY_HIGH = 1;
 const char *oledTransientText = nullptr;
 unsigned long oledTransientUntil = 0;
+uint8_t oledTransientPriority = OLED_PRIORITY_NORMAL;
 char lastOledText[40] = "";
+// -1 forces the first bar draw; otherwise the bar is redrawn on any state change.
+int16_t lastButtonMask = -1;
 // Transients are built at runtime, so keep our own copy of the text.
 char oledTransientBuffer[sizeof(lastOledText)] = "";
 
@@ -420,6 +428,7 @@ void setOLEDEnabled(bool enabled)
 {
   oledEnabled = enabled;
   lastOledText[0] = '\0';
+  lastButtonMask = -1;
   if (oledEnabled)
   {
     oled.setPowerSave(0);
@@ -433,6 +442,114 @@ void setOLEDEnabled(bool enabled)
   oledAwake = false;
 }
 
+/* One bit per button, so the overlay is only redrawn when something changes. */
+uint8_t getButtonMask()
+{
+  return (uint8_t)(button_A_state << 0) |
+         (uint8_t)(button_B_state << 1) |
+         (uint8_t)(button_C_state << 2) |
+         (uint8_t)(button_up_state << 3) |
+         (uint8_t)(button_down_state << 4) |
+         (uint8_t)(button_left_state << 5) |
+         (uint8_t)(button_right_state << 6) |
+         (uint8_t)(button_center_state << 7);
+}
+
+int16_t getBarSlotCenterX(uint8_t slot)
+{
+  return slot * OLED_BAR_SLOT_WIDTH + OLED_BAR_SLOT_WIDTH / 2;
+}
+
+/* Letters read as bold when pressed by drawing them twice, one pixel apart. */
+void drawBarLabel(uint8_t slot, const char *label, bool pressed)
+{
+  int16_t centerX = getBarSlotCenterX(slot);
+  oled.setFont(u8g2_font_5x8_tr);
+  int16_t x = centerX - oled.getStrWidth(label) / 2;
+  int16_t baselineY = OLED_BAR_CENTER_Y + 3;
+  oled.drawStr(x, baselineY, label);
+  if (pressed)
+    oled.drawStr(x + 1, baselineY, label);
+}
+
+/* Arrows are outlined when released and filled when pressed. */
+void drawBarArrow(uint8_t slot, uint8_t direction, bool pressed)
+{
+  int16_t cx = getBarSlotCenterX(slot);
+  int16_t cy = OLED_BAR_CENTER_Y;
+  int16_t tipX = cx;
+  int16_t tipY = cy;
+  int16_t baseAX = cx;
+  int16_t baseAY = cy;
+  int16_t baseBX = cx;
+  int16_t baseBY = cy;
+
+  switch (direction)
+  {
+  case 0: // up
+    tipY = cy - 3;
+    baseAX = cx - 3;
+    baseAY = cy + 2;
+    baseBX = cx + 3;
+    baseBY = cy + 2;
+    break;
+  case 1: // down
+    tipY = cy + 3;
+    baseAX = cx - 3;
+    baseAY = cy - 2;
+    baseBX = cx + 3;
+    baseBY = cy - 2;
+    break;
+  case 2: // left
+    tipX = cx - 3;
+    baseAX = cx + 2;
+    baseAY = cy - 3;
+    baseBX = cx + 2;
+    baseBY = cy + 3;
+    break;
+  default: // right
+    tipX = cx + 3;
+    baseAX = cx - 2;
+    baseAY = cy - 3;
+    baseBX = cx - 2;
+    baseBY = cy + 3;
+    break;
+  }
+
+  if (pressed)
+  {
+    oled.drawTriangle(tipX, tipY, baseAX, baseAY, baseBX, baseBY);
+    return;
+  }
+
+  oled.drawLine(tipX, tipY, baseAX, baseAY);
+  oled.drawLine(tipX, tipY, baseBX, baseBY);
+  oled.drawLine(baseAX, baseAY, baseBX, baseBY);
+}
+
+/* Debug overlay: A B C, the four directions as arrows, center as a dot.
+ * States are the logical (orientation-mapped) ones, so the bar also shows
+ * the effect of the current orientation.
+ */
+void drawButtonBar()
+{
+  drawBarLabel(0, "A", button_A_state);
+  drawBarLabel(1, "B", button_B_state);
+  drawBarLabel(2, "C", button_C_state);
+  drawBarArrow(3, 0, button_up_state);
+  drawBarArrow(4, 1, button_down_state);
+  drawBarArrow(5, 2, button_left_state);
+  drawBarArrow(6, 3, button_right_state);
+
+  int16_t centerX = getBarSlotCenterX(7);
+  if (button_center_state)
+    oled.drawDisc(centerX, OLED_BAR_CENTER_Y, 3);
+  else
+    oled.drawCircle(centerX, OLED_BAR_CENTER_Y, 3);
+
+  oled.drawHLine(0, OLED_BAR_SEPARATOR_Y, OLED_WIDTH);
+}
+
 void renderOLEDText(const char *text)
 {
   if (!oledEnabled)
@@ -444,13 +561,16 @@ void renderOLEDText(const char *text)
     oledAwake = true;
   }
 
-  if (strncmp(lastOledText, text, sizeof(lastOledText)) == 0)
+  uint8_t buttonMask = getButtonMask();
+  if (buttonMask == lastButtonMask && strncmp(lastOledText, text, sizeof(lastOledText)) == 0)
     return;
+  lastButtonMask = buttonMask;
 
   strncpy(lastOledText, text, sizeof(lastOledText) - 1);
   lastOledText[sizeof(lastOledText) - 1] = '\0';
 
   oled.clearBuffer();
+  drawButtonBar();
   oled.setFont(u8g2_font_7x14B_tr);
   // Fall back to a smaller font so longer messages can be wrapped instead of clipped.
   if (strchr(text, '\n') != nullptr || oled.getStrWidth(text) > OLED_WIDTH)
@@ -516,9 +636,10 @@ void renderOLEDText(const char *text)
   if (lineIndex < OLED_MAX_LINES)
     lineCount = lines[lineIndex][0] == '\0' ? lineIndex : lineIndex + 1;
   int16_t lineHeight = oled.getMaxCharHeight();
-  int16_t top = (OLED_HEIGHT - lineCount * lineHeight) / 2;
-  if (top < 0)
-    top = 0;
+  int16_t textAreaHeight = OLED_HEIGHT - OLED_TEXT_TOP;
+  int16_t top = OLED_TEXT_TOP + (textAreaHeight - lineCount * lineHeight) / 2;
+  if (top < OLED_TEXT_TOP)
+    top = OLED_TEXT_TOP;
 
   for (uint8_t i = 0; i < lineCount; i++)
   {
@@ -529,8 +650,14 @@ void renderOLEDText(const char *text)
   oled.sendBuffer();
 }
 
-void showOLEDTransient(const char *text, uint16_t durationMs)
+void showOLEDTransient(const char *text, uint16_t durationMs, uint8_t priority)
 {
+  // Keep the message already on screen if it outranks this one.
+  bool transientActive = oledTransientText != nullptr && millis() < oledTransientUntil;
+  if (transientActive && priority < oledTransientPriority)
+    return;
+
+  oledTransientPriority = priority;
   strncpy(oledTransientBuffer, text, sizeof(oledTransientBuffer) - 1);
   oledTransientBuffer[sizeof(oledTransientBuffer) - 1] = '\0';
   oledTransientText = oledTransientBuffer;
@@ -558,6 +685,7 @@ void updateOLEDStatus(bool force = false)
       return;
     }
     oledTransientText = nullptr;
+    oledTransientPriority = OLED_PRIORITY_NORMAL;
   }
 
   const char *text = BLE_connected ? getModeName(currentMode) : "Connecting...";
@@ -857,7 +985,7 @@ bool handleFormatCombo()
       Serial.print("BLE bonds cleared: ");
       Serial.println(bondsCleared);
     }
-    showOLEDTransient("Reset completed", OLED_TRANSIENT_MS);
+    showOLEDTransient("Reset completed", OLED_TRANSIENT_MS, OLED_PRIORITY_HIGH);
     delay(OLED_TRANSIENT_MS);
     ESP.restart();
   }
@@ -911,14 +1039,6 @@ bool handleRestartCombo()
   return true;
 }
 
-void clearDirectionButtonFlips()
-{
-  button_up_flipped = false;
-  button_down_flipped = false;
-  button_left_flipped = false;
-  button_right_flipped = false;
-}
-
 void applyOrientation(uint8_t orientation)
 {
   buttonOrientation = orientation;
@@ -927,77 +1047,57 @@ void applyOrientation(uint8_t orientation)
   setupDigitalIO();
 }
 
-/* Holding a single joystick direction (no other button) for ORIENTATION_SET_MS
- * makes that direction the new UP, so the controller can be remounted in any
- * of the four orientations without rewiring.
+/* Returns the physical joystick pin being held, or -1 when none or more than
+ * one is. Called at boot only, so the analog filter is primed first.
  */
-bool handleOrientationCombo()
+int8_t readHeldJoystickDirectionPin()
 {
-  bool anyDirection = button_up_state || button_down_state || button_left_state || button_right_state;
+  const uint8_t directionPins[] = {PIN_JOYSTICK_UP, PIN_JOYSTICK_DOWN, PIN_JOYSTICK_LEFT, PIN_JOYSTICK_RIGHT};
+  const uint8_t pinCount = sizeof(directionPins) / sizeof(directionPins[0]);
 
-  if (orientationComboConsumed)
+  // The joystick pins are read through an ADC filter that needs several
+  // consistent samples before it reports a press.
+  for (uint8_t pass = 0; pass <= JOYSTICK_ANALOG_CONFIRM_COUNT; pass++)
+    for (uint8_t i = 0; i < pinCount; i++)
+      readButtonPin(directionPins[i], true);
+
+  int8_t heldPin = -1;
+  for (uint8_t i = 0; i < pinCount; i++)
   {
-    clearDirectionButtonFlips();
-    keyReportChanged = false;
-    forceKeyReport = false;
-    if (!anyDirection)
-      orientationComboConsumed = false;
-    return true;
+    if (!readButtonPin(directionPins[i], true))
+      continue;
+    if (heldPin >= 0)
+      return -1; // ambiguous: more than one direction held
+    heldPin = (int8_t)directionPins[i];
   }
+  return heldPin;
+}
 
-  if (button_center_state || button_A_state || button_B_state || button_C_state)
+/* Orientation is selected at boot only: whichever joystick direction is held
+ * while the controller starts up becomes UP. Returns true when it was set.
+ */
+bool applyBootOrientation()
+{
+  int8_t heldPin = readHeldJoystickDirectionPin();
+  if (heldPin < 0)
     return false;
 
-  uint8_t pressedCount = (uint8_t)button_up_state + (uint8_t)button_down_state +
-                         (uint8_t)button_left_state + (uint8_t)button_right_state;
-  if (pressedCount != 1)
-    return false;
-
-  uint8_t heldPin;
-  unsigned long heldSince;
-  if (button_up_state)
-  {
-    heldPin = BUTTON_UP;
-    heldSince = button_up_time;
-  }
-  else if (button_down_state)
-  {
-    heldPin = BUTTON_DOWN;
-    heldSince = button_down_time;
-  }
-  else if (button_left_state)
-  {
-    heldPin = BUTTON_LEFT;
-    heldSince = button_left_time;
-  }
-  else
-  {
-    heldPin = BUTTON_RIGHT;
-    heldSince = button_right_time;
-  }
-
-  if (millis() - heldSince <= ORIENTATION_SET_MS)
-    return false;
-
-  int8_t orientation = getOrientationForUpPin(heldPin);
+  int8_t orientation = getOrientationForUpPin((uint8_t)heldPin);
   if (orientation < 0)
     return false;
 
-  releaseAllKeys();
-  orientationComboConsumed = true;
-  keyReportChanged = false;
-  forceKeyReport = false;
   applyOrientation((uint8_t)orientation);
   writeSettings();
+
   char message[sizeof(lastOledText)];
-  snprintf(message, sizeof(message), "Orientation\nis set\nUP is %s", getJoystickPinName(heldPin));
-  showOLEDTransient(message, OLED_ORIENTATION_MESSAGE_MS);
+  snprintf(message, sizeof(message), "Orientation\nis set\nUP is %s", getJoystickPinName((uint8_t)heldPin));
+  showOLEDTransient(message, OLED_ORIENTATION_MESSAGE_MS, OLED_PRIORITY_HIGH);
   if (DEBUG)
   {
-    Serial.print("Orientation set to map ");
+    Serial.print("Boot orientation set to map ");
     Serial.print(orientation);
     Serial.print("; UP is ");
-    Serial.println(getJoystickPinName(heldPin));
+    Serial.println(getJoystickPinName((uint8_t)heldPin));
   }
   return true;
 }
@@ -1072,10 +1172,6 @@ void handleDisplayToggleCombo()
 
 uint16_t getRepeatInterval()
 {
-  // Suppress auto-repeat while a still-held direction is being consumed.
-  if (orientationComboConsumed)
-    return 0;
-
   bool centerActive = isCenterActive();
 
   switch (currentMode)
@@ -1129,11 +1225,6 @@ void updateButtons()
 
   // Indicate whether any buttons changed state
   keyReportChanged = stateChanged;
-
-  /*------------------- Set joystick orientation ---------------------*/
-  if (handleOrientationCombo())
-    return;
-  /*------------------------------------------------------------------*/
 
   /*------------------- Handle mode cycling --------------------------*/
   handleModeCycleCombo();
@@ -1529,8 +1620,11 @@ void setup()
   bool settingsLoaded = readSettings();
   setButtonMapping(buttonOrientation);
 
+  // A joystick direction held while booting selects the orientation.
+  bool orientationSet = applyBootOrientation();
+
   // Create or repair settings.
-  if (!settingsLoaded)
+  if (!settingsLoaded && !orientationSet)
     writeSettings();
 
   // Refresh logical state after the final orientation mapping is known.
@@ -1555,7 +1649,7 @@ void loop()
     {
       if (DEBUG)
         Serial.println("BLE connected to host.");
-      showOLEDTransient("Connected", OLED_TRANSIENT_MS);
+      showOLEDTransient("Connected", OLED_TRANSIENT_MS, OLED_PRIORITY_NORMAL);
       connectionIndicated = true;
       keyReportChanged = true;
     }
