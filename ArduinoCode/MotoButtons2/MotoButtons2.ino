@@ -54,7 +54,8 @@ const bool STATUS_LED_ACTIVE_LOW = true;
 const uint16_t STATUS_LED_PULSE_PERIOD_MS = 1200;
 const uint16_t OLED_BOOT_MESSAGE_MS = 1000;
 const uint16_t OLED_TRANSIENT_MS = 2000;
-const uint16_t OLED_ORIENTATION_MESSAGE_MS = 5000;
+const uint16_t OLED_ORIENTATION_MESSAGE_MS = 3000;
+const uint16_t OLED_SPLASH_MESSAGE_MS = 3000;
 const uint16_t JOYSTICK_ANALOG_ACTIVE_LOW_PRESS_MIN = 1;
 const uint16_t JOYSTICK_ANALOG_ACTIVE_LOW_PRESS_MAX = 10;
 const uint16_t JOYSTICK_ANALOG_ACTIVE_LOW_RELEASE_MIN = 30;
@@ -233,8 +234,25 @@ const uint8_t OLED_MAX_LINES = 3;
 const uint8_t OLED_BAR_SLOTS = 8;
 const uint8_t OLED_BAR_SLOT_WIDTH = OLED_WIDTH / OLED_BAR_SLOTS;
 const uint8_t OLED_BAR_CENTER_Y = 4;
-const uint8_t OLED_BAR_SEPARATOR_Y = 10;
 const uint8_t OLED_TEXT_TOP = 12;
+// Boot splash: three fixed left-aligned lines, drawn as large as will fit.
+const uint8_t OLED_SPLASH_LINES = 3;
+const char *const OLED_SPLASH_TEXT[OLED_SPLASH_LINES] = {"READY", "TO >>", "RACE"};
+// Connection screens share one size, so both strings must fit the chosen font.
+const char OLED_TEXT_CONNECTING[] = "Connecting";
+const char OLED_TEXT_CONNECTED[] = "Connected";
+// Largest first: used where a screen must keep one stable font size.
+const uint8_t *const OLED_FONT_LADDER[] = {
+  u8g2_font_10x20_tr,
+  u8g2_font_9x15B_tr,
+  u8g2_font_9x15_tr,
+  u8g2_font_8x13B_tr,
+  u8g2_font_7x14B_tr,
+  u8g2_font_7x13B_tr,
+  u8g2_font_6x12_tr,
+  u8g2_font_5x8_tr
+};
+const uint8_t OLED_FONT_LADDER_COUNT = sizeof(OLED_FONT_LADDER) / sizeof(OLED_FONT_LADDER[0]);
 bool oledEnabled = true;
 bool oledAwake = false;
 bool displayComboConsumed = false;
@@ -244,6 +262,7 @@ const uint8_t OLED_PRIORITY_HIGH = 1;
 const char *oledTransientText = nullptr;
 unsigned long oledTransientUntil = 0;
 uint8_t oledTransientPriority = OLED_PRIORITY_NORMAL;
+const uint8_t *oledTransientFont = nullptr;
 char lastOledText[40] = "";
 // -1 forces the first bar draw; otherwise the bar is redrawn on any state change.
 int16_t lastButtonMask = -1;
@@ -460,21 +479,23 @@ int16_t getBarSlotCenterX(uint8_t slot)
   return slot * OLED_BAR_SLOT_WIDTH + OLED_BAR_SLOT_WIDTH / 2;
 }
 
-/* Letters read as bold when pressed by drawing them twice, one pixel apart. */
+/* Each slot keeps its fixed position and stays blank until its button is pressed. */
 void drawBarLabel(uint8_t slot, const char *label, bool pressed)
 {
-  int16_t centerX = getBarSlotCenterX(slot);
+  if (!pressed)
+    return;
+
   oled.setFont(u8g2_font_5x8_tr);
-  int16_t x = centerX - oled.getStrWidth(label) / 2;
-  int16_t baselineY = OLED_BAR_CENTER_Y + 3;
-  oled.drawStr(x, baselineY, label);
-  if (pressed)
-    oled.drawStr(x + 1, baselineY, label);
+  int16_t x = getBarSlotCenterX(slot) - oled.getStrWidth(label) / 2;
+  oled.drawStr(x, OLED_BAR_CENTER_Y + 3, label);
 }
 
-/* Arrows are outlined when released and filled when pressed. */
+/* Arrows appear only while their direction is pressed. */
 void drawBarArrow(uint8_t slot, uint8_t direction, bool pressed)
 {
+  if (!pressed)
+    return;
+
   int16_t cx = getBarSlotCenterX(slot);
   int16_t cy = OLED_BAR_CENTER_Y;
   int16_t tipX = cx;
@@ -516,18 +537,12 @@ void drawBarArrow(uint8_t slot, uint8_t direction, bool pressed)
     break;
   }
 
-  if (pressed)
-  {
-    oled.drawTriangle(tipX, tipY, baseAX, baseAY, baseBX, baseBY);
-    return;
-  }
-
-  oled.drawLine(tipX, tipY, baseAX, baseAY);
-  oled.drawLine(tipX, tipY, baseBX, baseBY);
-  oled.drawLine(baseAX, baseAY, baseBX, baseBY);
+  oled.drawTriangle(tipX, tipY, baseAX, baseAY, baseBX, baseBY);
 }
 
 /* Debug overlay: A B C, the four directions as arrows, center as a dot.
+ * A slot is drawn only while its button is held, and slots never move, so a
+ * combination of presses is read off the fixed positions.
  * States are the logical (orientation-mapped) ones, so the bar also shows
  * the effect of the current orientation.
  */
@@ -541,16 +556,74 @@ void drawButtonBar()
   drawBarArrow(5, 2, button_left_state);
   drawBarArrow(6, 3, button_right_state);
 
-  int16_t centerX = getBarSlotCenterX(7);
   if (button_center_state)
-    oled.drawDisc(centerX, OLED_BAR_CENTER_Y, 3);
-  else
-    oled.drawCircle(centerX, OLED_BAR_CENTER_Y, 3);
-
-  oled.drawHLine(0, OLED_BAR_SEPARATOR_Y, OLED_WIDTH);
+    oled.drawDisc(getBarSlotCenterX(7), OLED_BAR_CENTER_Y, 3);
 }
 
-void renderOLEDText(const char *text)
+/* Selects and applies the largest ladder font in which every one of texts
+ * fits maxWidth and lineCount stacked lines fit maxHeight. Screens that must
+ * not change size between messages measure all their strings at once.
+ */
+const uint8_t *pickFittingFont(const char *const *texts, uint8_t textCount, uint8_t lineCount,
+                               int16_t maxWidth, int16_t maxHeight, int16_t *ascentOut, int16_t *pitchOut)
+{
+  const uint8_t *chosenFont = OLED_FONT_LADDER[OLED_FONT_LADDER_COUNT - 1];
+
+  for (uint8_t f = 0; f < OLED_FONT_LADDER_COUNT; f++)
+  {
+    oled.setFont(OLED_FONT_LADDER[f]);
+    int16_t pitch = oled.getAscent() + 1;
+    bool fits = pitch * lineCount <= maxHeight;
+    for (uint8_t i = 0; i < textCount && fits; i++)
+    {
+      if (oled.getStrWidth(texts[i]) > maxWidth)
+        fits = false;
+    }
+
+    if (fits)
+    {
+      chosenFont = OLED_FONT_LADDER[f];
+      break;
+    }
+  }
+
+  oled.setFont(chosenFont);
+  if (ascentOut != nullptr)
+    *ascentOut = oled.getAscent();
+  if (pitchOut != nullptr)
+    *pitchOut = oled.getAscent() + 1;
+  return chosenFont;
+}
+
+/* All mode names share one size, so the longest one decides it. */
+const uint8_t *getModeScreenFont()
+{
+  static const uint8_t *font = nullptr;
+  if (font == nullptr)
+  {
+    const char *const modeNames[] = {getModeName(DMD2), getModeName(OsmAnd), getModeName(MEDIA)};
+    // The mode screen carries the button bar, so the text area is shorter.
+    font = pickFittingFont(modeNames, 3, 1, OLED_WIDTH, OLED_HEIGHT - OLED_TEXT_TOP, nullptr, nullptr);
+  }
+  return font;
+}
+
+/* "Connecting" and "Connected" share one size for the same reason. */
+const uint8_t *getConnectionScreenFont()
+{
+  static const uint8_t *font = nullptr;
+  if (font == nullptr)
+  {
+    const char *const texts[] = {OLED_TEXT_CONNECTING, OLED_TEXT_CONNECTED};
+    font = pickFittingFont(texts, 2, 1, OLED_WIDTH, OLED_HEIGHT, nullptr, nullptr);
+  }
+  return font;
+}
+
+/* Boot splash. Left aligned, no button bar, and the largest ladder font
+ * whose three lines still fit the 72x40 panel.
+ */
+void renderSplashScreen()
 {
   if (!oledEnabled)
     return;
@@ -561,7 +634,38 @@ void renderOLEDText(const char *text)
     oledAwake = true;
   }
 
-  uint8_t buttonMask = getButtonMask();
+  int16_t ascent = 0;
+  int16_t pitch = 0;
+  pickFittingFont(OLED_SPLASH_TEXT, OLED_SPLASH_LINES, OLED_SPLASH_LINES,
+                  OLED_WIDTH, OLED_HEIGHT, &ascent, &pitch);
+
+  int16_t totalHeight = pitch * (OLED_SPLASH_LINES - 1) + ascent;
+  int16_t top = (OLED_HEIGHT - totalHeight) / 2;
+  if (top < 0)
+    top = 0;
+
+  oled.clearBuffer();
+  for (uint8_t i = 0; i < OLED_SPLASH_LINES; i++)
+    oled.drawStr(0, top + ascent + i * pitch, OLED_SPLASH_TEXT[i]);
+  oled.sendBuffer();
+
+  // The splash bypasses the usual text path, so force the next render.
+  lastOledText[0] = '\0';
+  lastButtonMask = -1;
+}
+
+void renderOLEDText(const char *text, bool showButtonBar = false, const uint8_t *forcedFont = nullptr)
+{
+  if (!oledEnabled)
+    return;
+
+  if (!oledAwake)
+  {
+    oled.setPowerSave(0);
+    oledAwake = true;
+  }
+
+  uint8_t buttonMask = showButtonBar ? getButtonMask() : 0;
   if (buttonMask == lastButtonMask && strncmp(lastOledText, text, sizeof(lastOledText)) == 0)
     return;
   lastButtonMask = buttonMask;
@@ -570,11 +674,20 @@ void renderOLEDText(const char *text)
   lastOledText[sizeof(lastOledText) - 1] = '\0';
 
   oled.clearBuffer();
-  drawButtonBar();
-  oled.setFont(u8g2_font_7x14B_tr);
-  // Fall back to a smaller font so longer messages can be wrapped instead of clipped.
-  if (strchr(text, '\n') != nullptr || oled.getStrWidth(text) > OLED_WIDTH)
-    oled.setFont(u8g2_font_5x8_tr);
+  if (showButtonBar)
+    drawButtonBar();
+  if (forcedFont != nullptr)
+  {
+    // Screens that must not change size between messages pass their own font.
+    oled.setFont(forcedFont);
+  }
+  else
+  {
+    oled.setFont(u8g2_font_7x14B_tr);
+    // Fall back to a smaller font so longer messages can be wrapped instead of clipped.
+    if (strchr(text, '\n') != nullptr || oled.getStrWidth(text) > OLED_WIDTH)
+      oled.setFont(u8g2_font_5x8_tr);
+  }
 
   // Break on '\n', then greedily wrap each part on spaces to fit the panel.
   char lines[OLED_MAX_LINES][sizeof(lastOledText)];
@@ -636,10 +749,11 @@ void renderOLEDText(const char *text)
   if (lineIndex < OLED_MAX_LINES)
     lineCount = lines[lineIndex][0] == '\0' ? lineIndex : lineIndex + 1;
   int16_t lineHeight = oled.getMaxCharHeight();
-  int16_t textAreaHeight = OLED_HEIGHT - OLED_TEXT_TOP;
-  int16_t top = OLED_TEXT_TOP + (textAreaHeight - lineCount * lineHeight) / 2;
-  if (top < OLED_TEXT_TOP)
-    top = OLED_TEXT_TOP;
+  int16_t textTop = showButtonBar ? OLED_TEXT_TOP : 0;
+  int16_t textAreaHeight = OLED_HEIGHT - textTop;
+  int16_t top = textTop + (textAreaHeight - lineCount * lineHeight) / 2;
+  if (top < textTop)
+    top = textTop;
 
   for (uint8_t i = 0; i < lineCount; i++)
   {
@@ -650,7 +764,7 @@ void renderOLEDText(const char *text)
   oled.sendBuffer();
 }
 
-void showOLEDTransient(const char *text, uint16_t durationMs, uint8_t priority)
+void showOLEDTransient(const char *text, uint16_t durationMs, uint8_t priority, const uint8_t *font)
 {
   // Keep the message already on screen if it outranks this one.
   bool transientActive = oledTransientText != nullptr && millis() < oledTransientUntil;
@@ -658,11 +772,12 @@ void showOLEDTransient(const char *text, uint16_t durationMs, uint8_t priority)
     return;
 
   oledTransientPriority = priority;
+  oledTransientFont = font;
   strncpy(oledTransientBuffer, text, sizeof(oledTransientBuffer) - 1);
   oledTransientBuffer[sizeof(oledTransientBuffer) - 1] = '\0';
   oledTransientText = oledTransientBuffer;
   oledTransientUntil = millis() + durationMs;
-  renderOLEDText(oledTransientBuffer);
+  renderOLEDText(oledTransientBuffer, false, oledTransientFont);
 }
 
 void updateOLEDStatus(bool force = false)
@@ -681,18 +796,21 @@ void updateOLEDStatus(bool force = false)
     {
       if (force)
         lastOledText[0] = '\0';
-      renderOLEDText(oledTransientText);
+      renderOLEDText(oledTransientText, false, oledTransientFont);
       return;
     }
     oledTransientText = nullptr;
     oledTransientPriority = OLED_PRIORITY_NORMAL;
+    oledTransientFont = nullptr;
   }
 
-  const char *text = BLE_connected ? getModeName(currentMode) : "Connecting...";
+  const char *text = BLE_connected ? getModeName(currentMode) : OLED_TEXT_CONNECTING;
 
   if (force)
     lastOledText[0] = '\0';
-  renderOLEDText(text);
+  // The button bar is part of the mode screen only.
+  renderOLEDText(text, BLE_connected,
+                 BLE_connected ? getModeScreenFont() : getConnectionScreenFont());
 }
 
 void updateStatusLED()
@@ -714,7 +832,7 @@ void updateStatusLED()
 void indicateMode(Mode mode)
 {
   if (BLE_connected)
-    renderOLEDText(getModeName(mode));
+    renderOLEDText(getModeName(mode), true, getModeScreenFont());
   else
     updateOLEDStatus(true);
 }
@@ -985,7 +1103,7 @@ bool handleFormatCombo()
       Serial.print("BLE bonds cleared: ");
       Serial.println(bondsCleared);
     }
-    showOLEDTransient("Reset completed", OLED_TRANSIENT_MS, OLED_PRIORITY_HIGH);
+    showOLEDTransient("Reset completed", OLED_TRANSIENT_MS, OLED_PRIORITY_HIGH, nullptr);
     delay(OLED_TRANSIENT_MS);
     ESP.restart();
   }
@@ -1089,9 +1207,12 @@ bool applyBootOrientation()
   applyOrientation((uint8_t)orientation);
   writeSettings();
 
+  // Part of the boot sequence, so hold it on screen instead of racing the
+  // transient timer against BLE reconnecting.
   char message[sizeof(lastOledText)];
   snprintf(message, sizeof(message), "Orientation\nis set\nUP is %s", getJoystickPinName((uint8_t)heldPin));
-  showOLEDTransient(message, OLED_ORIENTATION_MESSAGE_MS, OLED_PRIORITY_HIGH);
+  renderOLEDText(message);
+  delay(OLED_ORIENTATION_MESSAGE_MS);
   if (DEBUG)
   {
     Serial.print("Boot orientation set to map ");
@@ -1606,7 +1727,6 @@ void setup()
   setupOLED();
   renderOLEDText("Booting...");
   delay(OLED_BOOT_MESSAGE_MS);
-  updateOLEDStatus(true);
 
   if (DEBUG)
   {
@@ -1626,6 +1746,10 @@ void setup()
   // Create or repair settings.
   if (!settingsLoaded && !orientationSet)
     writeSettings();
+
+  // Shown after any orientation message and before the mode screen.
+  renderSplashScreen();
+  delay(OLED_SPLASH_MESSAGE_MS);
 
   // Refresh logical state after the final orientation mapping is known.
   setupDigitalIO();
@@ -1649,7 +1773,8 @@ void loop()
     {
       if (DEBUG)
         Serial.println("BLE connected to host.");
-      showOLEDTransient("Connected", OLED_TRANSIENT_MS, OLED_PRIORITY_NORMAL);
+      showOLEDTransient(OLED_TEXT_CONNECTED, OLED_TRANSIENT_MS, OLED_PRIORITY_NORMAL,
+                        getConnectionScreenFont());
       connectionIndicated = true;
       keyReportChanged = true;
     }

@@ -58,12 +58,13 @@ Standard button functionality by mode:
 - Joystick Middle press - Mute
 
 Special functions:
-- Hold one joystick direction while powering on the device - that direction becomes UP (joystick orientation is saved); the display shows "Orientation is set" plus which direction is now UP (e.g. "UP is LEFT") for 5 secs. Orientation can only be changed at boot, never while the controller is running
+- Hold one joystick direction while powering on the device - that direction becomes UP (joystick orientation is saved); the display shows "Orientation is set" plus which direction is now UP (e.g. "UP is LEFT") for 3 secs. Orientation can only be changed at boot, never while the controller is running
 - Button A+B long press - LED brightness changes; hold it until you are satisfied and release
 - Button B+C long press - Mode change: DMD2 (blue) -> OsmAnd (green) -> Media (magenta)
 - Button A+B+C long press (5 secs) - Reset saved settings and Bluetooth bonds. Use this if automatic reconnection stops working
 - Button A+C long press (5 secs) - Restart the controller
-- The top of the display always shows a button overlay for debugging presses and combos: `A B C`, the four directions as arrows, and center as a dot. A pressed button is drawn bold (letters) or filled (arrows and dot)
+- Boot screens in order: "Booting...", then the orientation message if a direction was held, then a "READY TO >> RACE" splash, then the normal mode screen
+- The mode screen shows a button overlay along the top for debugging presses and combos. Each button has a fixed slot - `A B C`, the four directions as arrows, center as a dot - and a slot is drawn only while that button is held
 
 
 ## Wiring
