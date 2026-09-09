@@ -77,6 +77,13 @@ const char SETTINGS_ORIENT_KEY[] = "orient";
 
 // BLE configuration
 #define BLE_TX_POWER 9
+/* DMD2 identifies a controller by matching this Bluetooth name against its own
+ * list of known devices. Candidates to test, in order of preference:
+ *   "DMD2 CTL 8K" - the name DMD published for DIY 8 button controllers
+ *   "CICTRL"      - Carpe Iter Adventure Control; reported as detected by DMD2
+ *   "BarButtons"  - JaxeADV BarButtons, a DMD2 certified controller
+ * Any name change needs the phone to forget the pairing before re-pairing.
+ */
 const char BLE_DEVICE_NAME[] = "Bush Moto OLED";
 const char BLE_DEVICE_MODEL[] = "Btns v2.0";
 const char BLE_MANUFACTURER[] = "Bush";
@@ -161,6 +168,7 @@ const uint8_t HID_KEY_C = 0x06;
 const uint8_t HID_KEY_ENTER = 0x28;
 const uint8_t HID_KEY_MINUS = 0x2D;
 const uint8_t HID_KEY_EQUAL = 0x2E;
+const uint8_t HID_KEY_F5 = 0x3E;
 const uint8_t HID_KEY_F6 = 0x3F;
 const uint8_t HID_KEY_F7 = 0x40;
 const uint8_t HID_KEY_F8 = 0x41;
@@ -184,7 +192,7 @@ const uint8_t DMD_KEY_UP = HID_KEY_ARROW_UP;
 const uint8_t DMD_KEY_DOWN = HID_KEY_ARROW_DOWN;
 const uint8_t DMD_KEY_LEFT = HID_KEY_ARROW_LEFT;
 const uint8_t DMD_KEY_RIGHT = HID_KEY_ARROW_RIGHT;
-const uint8_t DMD_KEY_CENTER = HID_KEY_F8;
+const uint8_t DMD_KEY_CENTER = HID_KEY_F5;
 const uint8_t DMD_KEY_A = HID_KEY_F6;
 const uint8_t DMD_KEY_B = HID_KEY_F7;
 const uint8_t DMD_KEY_C = HID_KEY_ENTER;
@@ -263,6 +271,18 @@ const char *oledTransientText = nullptr;
 unsigned long oledTransientUntil = 0;
 uint8_t oledTransientPriority = OLED_PRIORITY_NORMAL;
 const uint8_t *oledTransientFont = nullptr;
+// Which kind of screen is currently on the panel, so each render can tell
+// whether it still owns the display.
+typedef enum
+{
+  SCREEN_NONE = 0,
+  SCREEN_TEXT,
+  SCREEN_SPLASH
+} OledScreen;
+OledScreen oledScreen = SCREEN_NONE;
+// The splash runs after the "Connected" message, for as long as we stay connected.
+bool oledSplashPending = false;
+unsigned long oledSplashUntil = 0;
 char lastOledText[40] = "";
 // -1 forces the first bar draw; otherwise the bar is redrawn on any state change.
 int16_t lastButtonMask = -1;
@@ -448,6 +468,7 @@ void setOLEDEnabled(bool enabled)
   oledEnabled = enabled;
   lastOledText[0] = '\0';
   lastButtonMask = -1;
+  oledScreen = SCREEN_NONE;
   if (oledEnabled)
   {
     oled.setPowerSave(0);
@@ -628,6 +649,9 @@ void renderSplashScreen()
   if (!oledEnabled)
     return;
 
+  if (oledScreen == SCREEN_SPLASH)
+    return;
+
   if (!oledAwake)
   {
     oled.setPowerSave(0);
@@ -649,9 +673,7 @@ void renderSplashScreen()
     oled.drawStr(0, top + ascent + i * pitch, OLED_SPLASH_TEXT[i]);
   oled.sendBuffer();
 
-  // The splash bypasses the usual text path, so force the next render.
-  lastOledText[0] = '\0';
-  lastButtonMask = -1;
+  oledScreen = SCREEN_SPLASH;
 }
 
 void renderOLEDText(const char *text, bool showButtonBar = false, const uint8_t *forcedFont = nullptr)
@@ -666,9 +688,11 @@ void renderOLEDText(const char *text, bool showButtonBar = false, const uint8_t 
   }
 
   uint8_t buttonMask = showButtonBar ? getButtonMask() : 0;
-  if (buttonMask == lastButtonMask && strncmp(lastOledText, text, sizeof(lastOledText)) == 0)
+  if (oledScreen == SCREEN_TEXT && buttonMask == lastButtonMask &&
+      strncmp(lastOledText, text, sizeof(lastOledText)) == 0)
     return;
   lastButtonMask = buttonMask;
+  oledScreen = SCREEN_TEXT;
 
   strncpy(lastOledText, text, sizeof(lastOledText) - 1);
   lastOledText[sizeof(lastOledText) - 1] = '\0';
@@ -789,13 +813,17 @@ void updateOLEDStatus(bool force = false)
     return;
   }
 
+  if (force)
+  {
+    lastOledText[0] = '\0';
+    oledScreen = SCREEN_NONE;
+  }
+
   // A transient message wins over the idle status, connected or not.
   if (oledTransientText != nullptr)
   {
     if (millis() < oledTransientUntil)
     {
-      if (force)
-        lastOledText[0] = '\0';
       renderOLEDText(oledTransientText, false, oledTransientFont);
       return;
     }
@@ -804,10 +832,33 @@ void updateOLEDStatus(bool force = false)
     oledTransientFont = nullptr;
   }
 
+  // Then the splash, which sits between "Connected" and the mode screen and
+  // is abandoned if the link drops.
+  if (oledSplashPending)
+  {
+    if (!BLE_connected)
+    {
+      oledSplashPending = false;
+      oledSplashUntil = 0;
+    }
+    else
+    {
+      if (oledSplashUntil == 0)
+        oledSplashUntil = millis() + OLED_SPLASH_MESSAGE_MS;
+
+      if (millis() < oledSplashUntil)
+      {
+        renderSplashScreen();
+        return;
+      }
+
+      oledSplashPending = false;
+      oledSplashUntil = 0;
+    }
+  }
+
   const char *text = BLE_connected ? getModeName(currentMode) : OLED_TEXT_CONNECTING;
 
-  if (force)
-    lastOledText[0] = '\0';
   // The button bar is part of the mode screen only.
   renderOLEDText(text, BLE_connected,
                  BLE_connected ? getModeScreenFont() : getConnectionScreenFont());
@@ -1298,12 +1349,8 @@ uint16_t getRepeatInterval()
   switch (currentMode)
   {
   case DMD2:
-    if (button_up_state || button_down_state || button_left_state || button_right_state)
-      return DIRECTION_REPEAT_INTERVAL_MS;
-
-    if ((button_A_state && !button_B_state && !button_C_state) ||
-        (button_B_state && !button_A_state && !button_C_state))
-      return DMD_ABC_REPEAT_INTERVAL_MS;
+    // DMD2 handles repeat, repeat speed and long press itself, and can only do
+    // that if it sees one clean key down and key up per physical press.
     return 0;
 
   case OsmAnd:
@@ -1374,6 +1421,9 @@ void mapButtonsToKeyReport()
   switch (currentMode)
   {
   case DMD2:
+    // Every key is held for exactly as long as its button is: the report
+    // simply mirrors the current button states. The A/B/C exclusions keep the
+    // chords (mode change, display toggle, restart, reset) from leaking keys.
     if (button_up_state)
     {
       if (DEBUG)
@@ -1402,13 +1452,16 @@ void mapButtonsToKeyReport()
       keyReport[i] = DMD_KEY_RIGHT;
       ++i;
     }
-    if (!button_center_state && button_center_flipped)
+    if (button_center_state)
     {
-      button_center_flipped = false;
-      forceKeyReport = true;
+      if (DEBUG)
+        Serial.println("DMD2 CENTER");
       keyReport[i] = DMD_KEY_CENTER;
       ++i;
     }
+    else if (button_center_flipped)
+      button_center_flipped = false;
+
     if (button_A_state && !button_B_state && !button_C_state)
     {
       button_A_flipped = false;
@@ -1427,7 +1480,7 @@ void mapButtonsToKeyReport()
     else if (!button_B_state && button_B_flipped)
       button_B_flipped = false;
 
-    if (button_C_state && button_C_flipped && !button_A_state && !button_B_state && (i < N_KEY_REPORT))
+    if (button_C_state && !button_A_state && !button_B_state && (i < N_KEY_REPORT))
     {
       button_C_flipped = false;
       keyReport[i] = DMD_KEY_C;
@@ -1747,10 +1800,6 @@ void setup()
   if (!settingsLoaded && !orientationSet)
     writeSettings();
 
-  // Shown after any orientation message and before the mode screen.
-  renderSplashScreen();
-  delay(OLED_SPLASH_MESSAGE_MS);
-
   // Refresh logical state after the final orientation mapping is known.
   setupDigitalIO();
   setupBLE();
@@ -1775,6 +1824,9 @@ void loop()
         Serial.println("BLE connected to host.");
       showOLEDTransient(OLED_TEXT_CONNECTED, OLED_TRANSIENT_MS, OLED_PRIORITY_NORMAL,
                         getConnectionScreenFont());
+      // The splash follows the "Connected" message.
+      oledSplashPending = true;
+      oledSplashUntil = 0;
       connectionIndicated = true;
       keyReportChanged = true;
     }

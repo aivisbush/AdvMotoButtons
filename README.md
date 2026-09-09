@@ -33,12 +33,13 @@ The device has:
 
 Standard button functionality by mode:
 
-`DMD2` mode (**NOTE**: bound buttons manually in Settings -> Setup Remote Controller):
-- Button A short press or hold - `F6` / oom in
+`DMD2` mode - the controller advertises as `DMD2 CTL 8K`, the name DMD2 matches to apply its
+8 button scheme (see the [controller implementation guide](Docs/dmd2-controller-implementation-guide.md)):
+- Button A short press or hold - `F6` / zoom in
 - Button B short press or hold - `F7` / zoom out
 - Button C short press or hold - `Enter` / follow toggle (focus)
 - Joystick Up, Down, Left, Right - Arrow keys
-- Joystick Middle press - `F8`
+- Joystick Middle press - `F5`
 
 `OsmAnd` mode:
 - Button A short press or hold - `+` / zoom in
@@ -63,7 +64,7 @@ Special functions:
 - Button B+C long press - Mode change: DMD2 (blue) -> OsmAnd (green) -> Media (magenta)
 - Button A+B+C long press (5 secs) - Reset saved settings and Bluetooth bonds. Use this if automatic reconnection stops working
 - Button A+C long press (5 secs) - Restart the controller
-- Boot screens in order: "Booting...", then the orientation message if a direction was held, then a "READY TO >> RACE" splash, then the normal mode screen
+- Screens in order: "Booting...", then the orientation message if a direction was held, then "Connecting" until a phone connects, then "Connected", then a "READY TO >> RACE" splash, then the mode screen. With no phone connected it stays on "Connecting" and the splash is never shown
 - The mode screen shows a button overlay along the top for debugging presses and combos. Each button has a fixed slot - `A B C`, the four directions as arrows, center as a dot - and a slot is drawn only while that button is held
 
 
@@ -76,3 +77,9 @@ See the [programming instructions](Programming/README.md).
 
 ## References
 - https://github.com/sigmdel/mini_esp32c3_oled_sketches
+- [DMD2 controller implementation guide](Docs/dmd2-controller-implementation-guide.md) - archived copy of the
+  DMD Navigation page describing how DMD2 recognises a controller by its Bluetooth name, and the key codes for
+  each button scheme ([original](https://www.drivemodedashboard.com/controller-implementation-guide/), now offline;
+  [archived snapshot](https://web.archive.org/web/20250121205014/https://www.drivemodedashboard.com/controller-implementation-guide/))
+- https://github.com/StylesRallyIndustries/RallyController - another DIY DMD2 controller; its changelog confirms
+  the `DMD2 CTL xK` device names are what DMD2 detects
