@@ -15,6 +15,16 @@ Device: ESP32-C3 OLED Mini (MotoButtons 2)
 // Enable serial debugging (turn this off if not connected to PC)
 #define DEBUG true
 
+/* Millivolt diagnostics for the inputs. Flip this to true to stream, at 115200
+ * baud, the state of every input plus the measured voltage of each joystick
+ * line - the numbers that tell a real press (a few mV) apart from a leaky line
+ * (hundreds of mV). See Docs/joystick-input-notes.md.
+ * Leave it false for normal riding: each measurement briefly drops the pull-up
+ * of the line it reads.
+ */
+#define DEBUG_INPUTS false
+const uint16_t DEBUG_INPUTS_SNAPSHOT_MS = 1000;
+
 /*
  * --------------------- HARDWARE PIN MAPPING -------------------------
  * ESP32-C3 OLED Mini board labels match raw GPIO numbers.
@@ -56,14 +66,27 @@ const uint16_t OLED_BOOT_MESSAGE_MS = 1000;
 const uint16_t OLED_TRANSIENT_MS = 2000;
 const uint16_t OLED_ORIENTATION_MESSAGE_MS = 3000;
 const uint16_t OLED_SPLASH_MESSAGE_MS = 3000;
-/* Inputs are plain digital reads with the internal pull-up. Nothing may put
- * these pads into analog mode: an ADC read disconnects the pull-up, which
- * leaves the joystick lines floating and produces phantom presses.
- * Each read takes a few samples and uses the majority, so a single spike is
- * discarded before the debounce filter ever sees it.
+/* A/B/C are plain digital reads with the internal pull-up: a few samples per
+ * read, majority wins, so a single spike is discarded before the debounce
+ * filter sees it.
  */
 const uint8_t BUTTON_SAMPLE_COUNT = 3;
 const uint16_t BUTTON_SAMPLE_SPACING_US = 50;
+
+/* The joystick lines are measured instead of read digitally. Leakage in the
+ * pod drags an idle line to roughly 0.7-2.2 V, which lands in the input's
+ * undefined band and makes digitalRead() flip at random - the phantom presses.
+ * Closing a contact shorts the line to the common and reads 3-5 mV, so a
+ * measured level separates a real press from a leaky one by two orders of
+ * magnitude. The pads stay in analog mode with the pull-up asserted, so an
+ * open contact still sits at the rail.
+ * The ADC ceiling is about 2984 mV on this chip, which is what a healthy idle
+ * line reports.
+ */
+const uint16_t JOYSTICK_PRESS_MV = 200;
+const uint16_t JOYSTICK_RELEASE_MV = 500;
+const uint8_t JOYSTICK_ADC_SAMPLES = 3;
+const uint16_t JOYSTICK_ADC_SETTLE_US = 200;
 
 // How long factory-reset and software-restart chords must be held
 #define MODE_RESET_MS 5000
@@ -356,11 +379,76 @@ void setStatusLED(uint8_t brightness)
   analogWrite(STATUS_LED_PIN, STATUS_LED_ACTIVE_LOW ? 255 - brightness : brightness);
 }
 
-/* Majority of BUTTON_SAMPLE_COUNT digital samples, spaced far enough apart to
- * straddle a short burst of interference.
+// On the ESP32-C3 only GPIO0..GPIO4 reach ADC1, which is exactly the joystick
+// (four directions plus centre). A/B/C are on GPIO7/9/10 and stay digital.
+bool isJoystickPin(uint8_t pin)
+{
+  return pin <= 4;
+}
+
+/* Puts a joystick pad into analog mode once and asserts the pull-up, so an
+ * open contact rests at the rail rather than floating.
+ */
+void primeJoystickPin(uint8_t pin)
+{
+  analogSetPinAttenuation(pin, ADC_11db);
+  analogRead(pin); // attaches the ADC, which is what clears the pull-up
+  gpio_pullup_en((gpio_num_t)pin);
+  gpio_pulldown_dis((gpio_num_t)pin);
+}
+
+/* Median of a few conversions, with the pull-up re-asserted first because
+ * attaching the ADC clears it.
+ */
+uint16_t readJoystickMillivolts(uint8_t pin)
+{
+  gpio_pullup_en((gpio_num_t)pin);
+  gpio_pulldown_dis((gpio_num_t)pin);
+  delayMicroseconds(JOYSTICK_ADC_SETTLE_US);
+
+  uint16_t samples[JOYSTICK_ADC_SAMPLES];
+  for (uint8_t i = 0; i < JOYSTICK_ADC_SAMPLES; i++)
+    samples[i] = analogReadMilliVolts(pin);
+
+  for (uint8_t i = 1; i < JOYSTICK_ADC_SAMPLES; i++)
+  {
+    uint16_t value = samples[i];
+    int8_t j = i - 1;
+    while (j >= 0 && samples[j] > value)
+    {
+      samples[j + 1] = samples[j];
+      j--;
+    }
+    samples[j + 1] = value;
+  }
+
+  return samples[JOYSTICK_ADC_SAMPLES / 2];
+}
+
+// Latched state per joystick pin, so the band between the two thresholds
+// simply keeps whatever the line last decided.
+bool joystickPressedState[5] = {false, false, false, false, false};
+
+bool readJoystickPressed(uint8_t pin)
+{
+  uint16_t millivolts = readJoystickMillivolts(pin);
+
+  if (millivolts <= JOYSTICK_PRESS_MV)
+    joystickPressedState[pin] = true;
+  else if (millivolts >= JOYSTICK_RELEASE_MV)
+    joystickPressedState[pin] = false;
+
+  return joystickPressedState[pin];
+}
+
+/* Joystick pins are decided by measured level; the rest by a majority of
+ * digital samples spaced to straddle a short burst of interference.
  */
 bool readButtonPin(uint8_t pin, bool activeLow)
 {
+  if (isJoystickPin(pin))
+    return readJoystickPressed(pin);
+
   uint8_t highCount = 0;
   for (uint8_t i = 0; i < BUTTON_SAMPLE_COUNT; i++)
   {
@@ -373,6 +461,100 @@ bool readButtonPin(uint8_t pin, bool activeLow)
   bool reading = highCount * 2 > BUTTON_SAMPLE_COUNT;
   return activeLow ? !reading : reading;
 }
+
+/*------------------------- INPUT DIAGNOSTICS ------------------------*/
+struct DebugInput
+{
+  const char *name;
+  uint8_t pin;
+};
+
+// Physical inputs, in wiring order. Names are the physical joystick
+// directions, not the orientation-mapped logical ones.
+const DebugInput DEBUG_INPUT_LIST[] = {
+  {"UP", PIN_JOYSTICK_UP},
+  {"DOWN", PIN_JOYSTICK_DOWN},
+  {"LEFT", PIN_JOYSTICK_LEFT},
+  {"RIGHT", PIN_JOYSTICK_RIGHT},
+  {"CENTER", PIN_BUTTON_CENTER},
+  {"A", PIN_BUTTON_A},
+  {"B", PIN_BUTTON_B},
+  {"C", PIN_BUTTON_C}
+};
+const uint8_t DEBUG_INPUT_COUNT = sizeof(DEBUG_INPUT_LIST) / sizeof(DEBUG_INPUT_LIST[0]);
+
+unsigned long debugLastChangeMs[16] = {0};
+
+bool isVoltageReadablePin(uint8_t pin)
+{
+  return isJoystickPin(pin);
+}
+
+void logInputEvent(uint8_t pin, const char *name, bool pressed)
+{
+  unsigned long now = millis();
+  uint8_t slot = pin & 0x0F;
+  unsigned long previousStateMs = now - debugLastChangeMs[slot];
+  debugLastChangeMs[slot] = now;
+
+  Serial.printf("[%8lu] %-6s GPIO%-2u %-8s  previous state held %6lu ms",
+                now, name, pin, pressed ? "PRESSED" : "released", previousStateMs);
+  if (isVoltageReadablePin(pin))
+    Serial.printf("  line %4u mV", readJoystickMillivolts(pin));
+  Serial.println();
+}
+
+/* Periodic table of every input. For the joystick, P/- is the decision the
+ * millivolt thresholds made; for A/B/C it is the digital level.
+ *   ~2984 mV = idle at the rail (the ADC ceiling on this chip)
+ *   under 200 mV = contact truly closed
+ *   in between   = leakage dragging the line down; ignored as a press
+ */
+void logInputSnapshot()
+{
+  Serial.printf("[%8lu] ", millis());
+  for (uint8_t i = 0; i < DEBUG_INPUT_COUNT; i++)
+  {
+    uint8_t pin = DEBUG_INPUT_LIST[i].pin;
+    if (isVoltageReadablePin(pin))
+    {
+      uint16_t millivolts = readJoystickMillivolts(pin);
+      Serial.printf("%s=%c/%umV", DEBUG_INPUT_LIST[i].name,
+                    joystickPressedState[pin] ? 'P' : '-', millivolts);
+    }
+    else
+    {
+      Serial.printf("%s=%c", DEBUG_INPUT_LIST[i].name, digitalRead(pin) ? 'H' : 'L');
+    }
+    Serial.print(i + 1 < DEBUG_INPUT_COUNT ? "  " : "\n");
+  }
+}
+
+void logInputHeader()
+{
+  Serial.println();
+  Serial.println("=== MotoButtons 2 input diagnostics ===");
+  Serial.printf("orientation map %u, mode %s, debounce %u ms, %u samples per read\n",
+                buttonOrientation, getModeName(currentMode), DEBOUNCE_TIME_MS, BUTTON_SAMPLE_COUNT);
+  Serial.printf("logical mapping: UP=GPIO%u DOWN=GPIO%u LEFT=GPIO%u RIGHT=GPIO%u CENTER=GPIO%u\n",
+                BUTTON_UP, BUTTON_DOWN, BUTTON_LEFT, BUTTON_RIGHT, BUTTON_CENTER);
+  Serial.printf("joystick thresholds: press <= %u mV, release >= %u mV\n",
+                JOYSTICK_PRESS_MV, JOYSTICK_RELEASE_MV);
+  Serial.println("Joystick: P = pressed, - = released. A/B/C: H = released, L = pressed.");
+  Serial.println("Idle sits at the ADC ceiling (~2984 mV); a real press reads a few mV.");
+  Serial.println("=======================================");
+}
+
+void debugInputsTick()
+{
+  static unsigned long lastSnapshot = 0;
+  if (millis() - lastSnapshot < DEBUG_INPUTS_SNAPSHOT_MS)
+    return;
+
+  lastSnapshot = millis();
+  logInputSnapshot();
+}
+/*----------------------- END INPUT DIAGNOSTICS ----------------------*/
 
 void setupOLED()
 {
@@ -946,7 +1128,9 @@ bool debounceButton(unsigned int button, bool activeLow, bool *state, bool *prio
       stateChanged = true;
       *state = reading;
       *buttonFlipped = true;
-      if (DEBUG)
+      if (DEBUG_INPUTS)
+        logInputEvent(button, buttonName, reading);
+      else if (DEBUG)
       {
         Serial.print("Button ");
         Serial.print(buttonName);
@@ -1591,6 +1775,13 @@ void setupDigitalIO()
   configureInputPull(BUTTON_B, BUTTON_B_ACTIVE_LOW);
   configureInputPull(BUTTON_C, BUTTON_C_ACTIVE_LOW);
 
+  // The joystick pads are measured, not read digitally.
+  primeJoystickPin(PIN_JOYSTICK_UP);
+  primeJoystickPin(PIN_JOYSTICK_DOWN);
+  primeJoystickPin(PIN_JOYSTICK_LEFT);
+  primeJoystickPin(PIN_JOYSTICK_RIGHT);
+  primeJoystickPin(PIN_BUTTON_CENTER);
+
   pinMode(STATUS_LED_PIN, OUTPUT);
   setStatusLED(0);
 
@@ -1742,6 +1933,8 @@ void setup()
 
   if (DEBUG)
     Serial.println("Setup complete; advertising BLE HID device.");
+  if (DEBUG_INPUTS)
+    logInputHeader();
   updateOLEDStatus(true);
 }
 
@@ -1779,6 +1972,9 @@ void loop()
   }
 
   updateButtons();
+
+  if (DEBUG_INPUTS)
+    debugInputsTick();
 
   if (!BLE_connected)
     return;

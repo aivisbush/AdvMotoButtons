@@ -83,3 +83,9 @@ See the [programming instructions](Programming/README.md).
   [archived snapshot](https://web.archive.org/web/20250121205014/https://www.drivemodedashboard.com/controller-implementation-guide/))
 - https://github.com/StylesRallyIndustries/RallyController - another DIY DMD2 controller; its changelog confirms
   the `DMD2 CTL xK` device names are what DMD2 detects
+
+## Notes
+Background notes for anyone (or any agent) picking this up:
+- [CLAUDE.md](CLAUDE.md) - project overview, pin map, build notes and design decisions
+- [Docs/joystick-input-notes.md](Docs/joystick-input-notes.md) - why the joystick is read with the ADC
+- [Docs/dmd2-recognition-notes.md](Docs/dmd2-recognition-notes.md) - state of the DMD2 remote recognition work
