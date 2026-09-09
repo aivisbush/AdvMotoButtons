@@ -56,11 +56,14 @@ const uint16_t OLED_BOOT_MESSAGE_MS = 1000;
 const uint16_t OLED_TRANSIENT_MS = 2000;
 const uint16_t OLED_ORIENTATION_MESSAGE_MS = 3000;
 const uint16_t OLED_SPLASH_MESSAGE_MS = 3000;
-const uint16_t JOYSTICK_ANALOG_ACTIVE_LOW_PRESS_MIN = 1;
-const uint16_t JOYSTICK_ANALOG_ACTIVE_LOW_PRESS_MAX = 10;
-const uint16_t JOYSTICK_ANALOG_ACTIVE_LOW_RELEASE_MIN = 30;
-const uint8_t JOYSTICK_ANALOG_SAMPLE_COUNT = 7;
-const uint8_t JOYSTICK_ANALOG_CONFIRM_COUNT = 3;
+/* Inputs are plain digital reads with the internal pull-up. Nothing may put
+ * these pads into analog mode: an ADC read disconnects the pull-up, which
+ * leaves the joystick lines floating and produces phantom presses.
+ * Each read takes a few samples and uses the majority, so a single spike is
+ * discarded before the debounce filter ever sees it.
+ */
+const uint8_t BUTTON_SAMPLE_COUNT = 3;
+const uint16_t BUTTON_SAMPLE_SPACING_US = 50;
 
 // How long factory-reset and software-restart chords must be held
 #define MODE_RESET_MS 5000
@@ -353,105 +356,21 @@ void setStatusLED(uint8_t brightness)
   analogWrite(STATUS_LED_PIN, STATUS_LED_ACTIVE_LOW ? 255 - brightness : brightness);
 }
 
-bool isJoystickAnalogPin(uint8_t pin)
-{
-  return pin == PIN_JOYSTICK_UP ||
-         pin == PIN_JOYSTICK_DOWN ||
-         pin == PIN_JOYSTICK_LEFT ||
-         pin == PIN_JOYSTICK_RIGHT ||
-         pin == PIN_BUTTON_CENTER;
-}
-
-struct JoystickAnalogFilter
-{
-  uint8_t pin;
-  bool state;
-  uint8_t pressCount;
-  uint8_t releaseCount;
-  int lastAdc;
-};
-
-JoystickAnalogFilter joystickAnalogFilters[] = {
-  {PIN_JOYSTICK_UP, false, 0, 0, -1},
-  {PIN_JOYSTICK_DOWN, false, 0, 0, -1},
-  {PIN_JOYSTICK_LEFT, false, 0, 0, -1},
-  {PIN_JOYSTICK_RIGHT, false, 0, 0, -1},
-  {PIN_BUTTON_CENTER, false, 0, 0, -1}
-};
-
-int8_t getJoystickAnalogFilterIndex(uint8_t pin)
-{
-  for (size_t i = 0; i < sizeof(joystickAnalogFilters) / sizeof(joystickAnalogFilters[0]); i++)
-  {
-    if (joystickAnalogFilters[i].pin == pin)
-      return i;
-  }
-  return -1;
-}
-
-int readFilteredJoystickAnalog(uint8_t pin)
-{
-  uint16_t samples[JOYSTICK_ANALOG_SAMPLE_COUNT];
-  for (uint8_t i = 0; i < JOYSTICK_ANALOG_SAMPLE_COUNT; i++)
-  {
-    samples[i] = analogRead(pin);
-    delayMicroseconds(80);
-  }
-
-  for (uint8_t i = 1; i < JOYSTICK_ANALOG_SAMPLE_COUNT; i++)
-  {
-    uint16_t value = samples[i];
-    int8_t j = i - 1;
-    while (j >= 0 && samples[j] > value)
-    {
-      samples[j + 1] = samples[j];
-      j--;
-    }
-    samples[j + 1] = value;
-  }
-
-  return samples[JOYSTICK_ANALOG_SAMPLE_COUNT / 2];
-}
-
+/* Majority of BUTTON_SAMPLE_COUNT digital samples, spaced far enough apart to
+ * straddle a short burst of interference.
+ */
 bool readButtonPin(uint8_t pin, bool activeLow)
 {
-  if (isJoystickAnalogPin(pin))
+  uint8_t highCount = 0;
+  for (uint8_t i = 0; i < BUTTON_SAMPLE_COUNT; i++)
   {
-    int8_t filterIndex = getJoystickAnalogFilterIndex(pin);
-    if (filterIndex < 0)
-      return false;
-
-    JoystickAnalogFilter *filter = &joystickAnalogFilters[filterIndex];
-    int analogValue = readFilteredJoystickAnalog(pin);
-    filter->lastAdc = analogValue;
-
-    if (activeLow)
-    {
-      if (analogValue >= JOYSTICK_ANALOG_ACTIVE_LOW_PRESS_MIN &&
-          analogValue <= JOYSTICK_ANALOG_ACTIVE_LOW_PRESS_MAX)
-      {
-        filter->pressCount++;
-        filter->releaseCount = 0;
-        if (filter->pressCount >= JOYSTICK_ANALOG_CONFIRM_COUNT)
-          filter->state = true;
-      }
-      else if (analogValue == 0 || analogValue >= JOYSTICK_ANALOG_ACTIVE_LOW_RELEASE_MIN)
-      {
-        filter->releaseCount++;
-        filter->pressCount = 0;
-        if (filter->releaseCount >= JOYSTICK_ANALOG_CONFIRM_COUNT)
-          filter->state = false;
-      }
-      else
-      {
-        filter->pressCount = 0;
-        filter->releaseCount = 0;
-      }
-      return filter->state;
-    }
+    if (digitalRead(pin))
+      highCount++;
+    if (i + 1 < BUTTON_SAMPLE_COUNT)
+      delayMicroseconds(BUTTON_SAMPLE_SPACING_US);
   }
 
-  bool reading = digitalRead(pin);
+  bool reading = highCount * 2 > BUTTON_SAMPLE_COUNT;
   return activeLow ? !reading : reading;
 }
 
@@ -975,10 +894,33 @@ int8_t getOrientationForUpPin(uint8_t pin)
 }
 
 // This function returns true if the center button is in an active state
-// if so, the program should ignore up/down/left/right on the joystick
 bool isCenterActive()
 {
   return button_center_state;
+}
+
+/* A 5-way joystick cannot physically report opposite directions at the same
+ * time, so when it does, one of them is interference: ignore the pair until it
+ * resolves. The debug bar still shows the raw states, so a conflict is visible.
+ */
+bool isUpActive()
+{
+  return button_up_state && !button_down_state;
+}
+
+bool isDownActive()
+{
+  return button_down_state && !button_up_state;
+}
+
+bool isLeftActive()
+{
+  return button_left_state && !button_right_state;
+}
+
+bool isRightActive()
+{
+  return button_right_state && !button_left_state;
 }
 
 // if  This function should be called rapidly in a loop to update the debounce filter and key state
@@ -1217,18 +1159,12 @@ void applyOrientation(uint8_t orientation)
 }
 
 /* Returns the physical joystick pin being held, or -1 when none or more than
- * one is. Called at boot only, so the analog filter is primed first.
+ * one is. Called at boot only.
  */
 int8_t readHeldJoystickDirectionPin()
 {
   const uint8_t directionPins[] = {PIN_JOYSTICK_UP, PIN_JOYSTICK_DOWN, PIN_JOYSTICK_LEFT, PIN_JOYSTICK_RIGHT};
   const uint8_t pinCount = sizeof(directionPins) / sizeof(directionPins[0]);
-
-  // The joystick pins are read through an ADC filter that needs several
-  // consistent samples before it reports a press.
-  for (uint8_t pass = 0; pass <= JOYSTICK_ANALOG_CONFIRM_COUNT; pass++)
-    for (uint8_t i = 0; i < pinCount; i++)
-      readButtonPin(directionPins[i], true);
 
   int8_t heldPin = -1;
   for (uint8_t i = 0; i < pinCount; i++)
@@ -1355,7 +1291,7 @@ uint16_t getRepeatInterval()
 
   case OsmAnd:
     if (!centerActive &&
-        (button_up_state || button_down_state || button_left_state || button_right_state))
+        (isUpActive() || isDownActive() || isLeftActive() || isRightActive()))
       return DIRECTION_REPEAT_INTERVAL_MS;
 
     if ((button_A_state && !button_B_state && !button_C_state) ||
@@ -1424,28 +1360,28 @@ void mapButtonsToKeyReport()
     // Every key is held for exactly as long as its button is: the report
     // simply mirrors the current button states. The A/B/C exclusions keep the
     // chords (mode change, display toggle, restart, reset) from leaking keys.
-    if (button_up_state)
+    if (isUpActive())
     {
       if (DEBUG)
         Serial.println("DMD2 UP");
       keyReport[i] = DMD_KEY_UP;
       ++i;
     }
-    if (button_down_state)
+    if (isDownActive())
     {
       if (DEBUG)
         Serial.println("DMD2 DOWN");
       keyReport[i] = DMD_KEY_DOWN;
       ++i;
     }
-    if (button_left_state)
+    if (isLeftActive())
     {
       if (DEBUG)
         Serial.println("DMD2 LEFT");
       keyReport[i] = DMD_KEY_LEFT;
       ++i;
     }
-    if (button_right_state)
+    if (isRightActive())
     {
       if (DEBUG)
         Serial.println("DMD2 RIGHT");
@@ -1491,28 +1427,28 @@ void mapButtonsToKeyReport()
     break;
 
   case OsmAnd:
-    if (button_up_state && !centerActive)
+    if (isUpActive() && !centerActive)
     {
       if (DEBUG)
         Serial.println("OsmAnd UP");
       keyReport[i] = OSMAND_KEY_UP;
       ++i;
     }
-    if (button_down_state && !centerActive)
+    if (isDownActive() && !centerActive)
     {
       if (DEBUG)
         Serial.println("OsmAnd DOWN");
       keyReport[i] = OSMAND_KEY_DOWN;
       ++i;
     }
-    if (button_left_state && !centerActive)
+    if (isLeftActive() && !centerActive)
     {
       if (DEBUG)
         Serial.println("OsmAnd LEFT");
       keyReport[i] = OSMAND_KEY_LEFT;
       ++i;
     }
-    if (button_right_state && !centerActive)
+    if (isRightActive() && !centerActive)
     {
       if (DEBUG)
         Serial.println("OsmAnd RIGHT");
@@ -1567,25 +1503,25 @@ void mapButtonsToKeyReport()
 
   case MEDIA:
     // the media keys must be reported via a different ("consumer") function to work on iOS
-    if (button_up_state && !centerActive)
+    if (isUpActive() && !centerActive)
     {
       if (DEBUG)
         Serial.println("Media key UP");
       sendConsumerKey(MEDIA_KEY_UP);
     }
-    if (button_down_state && !centerActive)
+    if (isDownActive() && !centerActive)
     {
       if (DEBUG)
         Serial.println("Media key DOWN");
       sendConsumerKey(MEDIA_KEY_DOWN);
     }
-    if (button_left_state && !centerActive)
+    if (isLeftActive() && !centerActive)
     {
       if (DEBUG)
         Serial.println("Media key LEFT");
       sendConsumerKey(MEDIA_KEY_LEFT);
     }
-    if (button_right_state && !centerActive)
+    if (isRightActive() && !centerActive)
     {
       if (DEBUG)
         Serial.println("Media key RIGHT");
