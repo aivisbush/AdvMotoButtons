@@ -84,7 +84,12 @@ keeps those pads in analog mode with the pull-up asserted and thresholds on mill
 suppressed by a fired chord), builds the keyboard report those imply, and sends it only when it
 differs from the last one sent. Bindings have a kind: `Held` (down while held), `Tap` (once per
 press, held `KEY_TAP_MS`), `Consumer` (consumer-page pulse, repeating if `repeatMs` is set).
-Firmware repeat exists for OsmAnd and Media only.
+Firmware repeat exists for OsmAnd and Media only, and never blocks: a `Held` binding with `repeatMs`
+is reported down for `repeatMs` and up for `releaseMs`, per key, by omitting it from the report during
+the up phase. The OsmAnd arrows use `OSMAND_DIRECTION_KEY_DOWN_MS` / `_UP_MS` (30/30): OsmAnd scrolls
+1 px per 3 ms while a key is down and adds a 200 px nudge when a press under 250 ms is released, so
+each tap cycle moves the map one nudge. Both phases must be at least one BLE connection interval,
+which `ble_hid.cpp` logs at connect, or OsmAnd misses the release and the motion stutters.
 
 **DMD2 mode sends raw key down / key up.** DMD2 owns repeat, repeat speed and long press, and needs
 one clean press and one clean release. The only deviation is `CHORD_GRACE_MS` (50 ms) on lone A/B/C

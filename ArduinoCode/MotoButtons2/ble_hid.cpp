@@ -87,11 +87,27 @@ static void loadBondedPhonesIntoWhitelist()
   debugPrintf("BLE bonds: %d\n", bondCount);
 }
 
+// The connection interval decides how often a report can leave. The OsmAnd
+// tap timings in config.h should be whole multiples of it.
+static void logConnectionParams(const NimBLEConnInfo &connInfo)
+{
+  unsigned long intervalHundredths = (unsigned long)connInfo.getConnInterval() * 125; // 1.25 ms units
+  debugPrintf("BLE connection interval %lu.%02lu ms, slave latency %u, supervision timeout %u ms\n",
+              intervalHundredths / 100, intervalHundredths % 100, connInfo.getConnLatency(),
+              connInfo.getConnTimeout() * 10);
+}
+
 class MotoButtonsServerCallbacks : public NimBLEServerCallbacks
 {
   void onConnect(NimBLEServer *server, NimBLEConnInfo &connInfo) override
   {
     connected = true;
+    logConnectionParams(connInfo);
+  }
+
+  void onConnParamsUpdate(NimBLEConnInfo &connInfo) override
+  {
+    logConnectionParams(connInfo);
   }
 
   void onDisconnect(NimBLEServer *server, NimBLEConnInfo &connInfo, int reason) override

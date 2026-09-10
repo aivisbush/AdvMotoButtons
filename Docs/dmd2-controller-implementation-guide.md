@@ -141,7 +141,9 @@ sends **raw key down on press and key up on release** for every button, with no 
 auto-repeat and nothing fired on release only. That is the guide's first requirement: DMD2 owns
 repeat on/off, repeat speed and long press, per app section, and can only do that if it sees one
 clean press and one clean release. (OsmAnd and Media modes keep their own key repeat, since those
-apps do not implement it.)
+apps do not implement it. For the OsmAnd arrows the repeat is a tap of `OSMAND_DIRECTION_KEY_DOWN_MS`
+down and `OSMAND_DIRECTION_KEY_UP_MS` up, because OsmAnd scrolls the map itself while a key is down
+and adds a 200 px nudge for every press shorter than 250 ms.)
 
 The one deliberate deviation: a lone A, B or C press is reported after a short grace period
 (`CHORD_GRACE_MS`, 50 ms), so that a two-button chord landing within it does not leak its first key

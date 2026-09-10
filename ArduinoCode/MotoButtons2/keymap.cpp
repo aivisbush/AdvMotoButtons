@@ -15,8 +15,9 @@ enum class KeyKind : uint8_t
 struct KeyBinding
 {
   KeyKind kind;
-  uint16_t code;      // HID keyboard usage or consumer usage
-  uint16_t repeatMs;  // 0 = no firmware repeat
+  uint16_t code;       // HID keyboard usage or consumer usage
+  uint16_t repeatMs;   // Held: key-down time per repeat cycle, 0 = plain hold. Consumer: pulse interval, 0 = once.
+  uint16_t releaseMs;  // Held: key-up time per repeat cycle.
 };
 
 struct ModeKeymap
@@ -31,36 +32,38 @@ static const ModeKeymap KEYMAPS[] = {
   // DMD2 owns repeat, repeat speed and long press itself, and needs one
   // clean key down and key up per physical press to do it.
   {Mode::DMD2, "DMD", false, {
-    {KeyKind::Held, HID_KEY_ARROW_UP, 0},
-    {KeyKind::Held, HID_KEY_ARROW_DOWN, 0},
-    {KeyKind::Held, HID_KEY_ARROW_LEFT, 0},
-    {KeyKind::Held, HID_KEY_ARROW_RIGHT, 0},
-    {KeyKind::Held, HID_KEY_F5, 0},
-    {KeyKind::Held, HID_KEY_F6, 0},
-    {KeyKind::Held, HID_KEY_F7, 0},
-    {KeyKind::Held, HID_KEY_ENTER, 0},
+    {KeyKind::Held, HID_KEY_ARROW_UP, 0, 0},
+    {KeyKind::Held, HID_KEY_ARROW_DOWN, 0, 0},
+    {KeyKind::Held, HID_KEY_ARROW_LEFT, 0, 0},
+    {KeyKind::Held, HID_KEY_ARROW_RIGHT, 0, 0},
+    {KeyKind::Held, HID_KEY_F5, 0, 0},
+    {KeyKind::Held, HID_KEY_F6, 0, 0},
+    {KeyKind::Held, HID_KEY_F7, 0, 0},
+    {KeyKind::Held, HID_KEY_ENTER, 0, 0},
   }},
-  // OsmAnd does not repeat keys itself, so the firmware does.
+  // OsmAnd does not repeat keys itself, so the firmware does. The arrows
+  // are tapped with their own down/up times, see OSMAND_DIRECTION_KEY_* in
+  // config.h, because OsmAnd turns every short tap into a 200 px nudge.
   {Mode::OsmAnd, "OsmAnd", false, {
-    {KeyKind::Held, HID_KEY_ARROW_UP, DIRECTION_REPEAT_INTERVAL_MS},
-    {KeyKind::Held, HID_KEY_ARROW_DOWN, DIRECTION_REPEAT_INTERVAL_MS},
-    {KeyKind::Held, HID_KEY_ARROW_LEFT, DIRECTION_REPEAT_INTERVAL_MS},
-    {KeyKind::Held, HID_KEY_ARROW_RIGHT, DIRECTION_REPEAT_INTERVAL_MS},
-    {KeyKind::None, HID_KEY_NONE, 0},                         // centre unbound
-    {KeyKind::Held, HID_KEY_EQUAL, ABC_REPEAT_INTERVAL_MS},   // zoom in
-    {KeyKind::Held, HID_KEY_MINUS, ABC_REPEAT_INTERVAL_MS},   // zoom out
-    {KeyKind::Tap, HID_KEY_C, 0},                             // move to my location
+    {KeyKind::Held, HID_KEY_ARROW_UP, OSMAND_DIRECTION_KEY_DOWN_MS, OSMAND_DIRECTION_KEY_UP_MS},
+    {KeyKind::Held, HID_KEY_ARROW_DOWN, OSMAND_DIRECTION_KEY_DOWN_MS, OSMAND_DIRECTION_KEY_UP_MS},
+    {KeyKind::Held, HID_KEY_ARROW_LEFT, OSMAND_DIRECTION_KEY_DOWN_MS, OSMAND_DIRECTION_KEY_UP_MS},
+    {KeyKind::Held, HID_KEY_ARROW_RIGHT, OSMAND_DIRECTION_KEY_DOWN_MS, OSMAND_DIRECTION_KEY_UP_MS},
+    {KeyKind::None, HID_KEY_NONE, 0, 0},                                              // centre unbound
+    {KeyKind::Held, HID_KEY_EQUAL, ABC_REPEAT_INTERVAL_MS, REPEAT_RELEASE_GAP_MS},   // zoom in
+    {KeyKind::Held, HID_KEY_MINUS, ABC_REPEAT_INTERVAL_MS, REPEAT_RELEASE_GAP_MS},   // zoom out
+    {KeyKind::Tap, HID_KEY_C, 0, 0},                                                  // move to my location
   }},
   // Media keys go out on the consumer page, which iOS requires.
   {Mode::Media, "Media", true, {
-    {KeyKind::Consumer, HID_USAGE_CONSUMER_VOLUME_INCREMENT, VOLUME_REPEAT_INTERVAL_MS},
-    {KeyKind::Consumer, HID_USAGE_CONSUMER_VOLUME_DECREMENT, VOLUME_REPEAT_INTERVAL_MS},
-    {KeyKind::Consumer, HID_USAGE_CONSUMER_SCAN_PREVIOUS, 0},
-    {KeyKind::Consumer, HID_USAGE_CONSUMER_SCAN_NEXT, 0},
-    {KeyKind::Consumer, HID_USAGE_CONSUMER_MUTE, 0},
-    {KeyKind::Consumer, HID_USAGE_CONSUMER_PLAY_PAUSE, 0},
-    {KeyKind::Consumer, HID_USAGE_CONSUMER_BRIGHTNESS_INCREMENT, ABC_REPEAT_INTERVAL_MS},
-    {KeyKind::Consumer, HID_USAGE_CONSUMER_BRIGHTNESS_DECREMENT, ABC_REPEAT_INTERVAL_MS},
+    {KeyKind::Consumer, HID_USAGE_CONSUMER_VOLUME_INCREMENT, VOLUME_REPEAT_INTERVAL_MS, 0},
+    {KeyKind::Consumer, HID_USAGE_CONSUMER_VOLUME_DECREMENT, VOLUME_REPEAT_INTERVAL_MS, 0},
+    {KeyKind::Consumer, HID_USAGE_CONSUMER_SCAN_PREVIOUS, 0, 0},
+    {KeyKind::Consumer, HID_USAGE_CONSUMER_SCAN_NEXT, 0, 0},
+    {KeyKind::Consumer, HID_USAGE_CONSUMER_MUTE, 0, 0},
+    {KeyKind::Consumer, HID_USAGE_CONSUMER_PLAY_PAUSE, 0, 0},
+    {KeyKind::Consumer, HID_USAGE_CONSUMER_BRIGHTNESS_INCREMENT, ABC_REPEAT_INTERVAL_MS, 0},
+    {KeyKind::Consumer, HID_USAGE_CONSUMER_BRIGHTNESS_DECREMENT, ABC_REPEAT_INTERVAL_MS, 0},
   }},
 };
 static const uint8_t KEYMAP_COUNT = sizeof(KEYMAPS) / sizeof(KEYMAPS[0]);
@@ -69,10 +72,10 @@ static const uint8_t KEYMAP_COUNT = sizeof(KEYMAPS) / sizeof(KEYMAPS[0]);
 static bool activeNow[BUTTON_COUNT] = {false};
 static bool activeBefore[BUTTON_COUNT] = {false};
 static uint8_t lastSentReport[KEY_REPORT_SIZE] = {HID_KEY_NONE};
-static unsigned long lastRepeatMs = 0;
 static bool tapActive = false;
 static uint8_t tapCode = HID_KEY_NONE;
 static unsigned long tapStartMs = 0;
+static unsigned long repeatCycleStartMs[BUTTON_COUNT] = {0};
 static unsigned long consumerLastPulseMs[BUTTON_COUNT] = {0};
 
 static const ModeKeymap &keymapFor(Mode mode)
@@ -147,7 +150,29 @@ static void sendReport(const uint8_t report[KEY_REPORT_SIZE])
 {
   bleSendKeyboardReport(report);
   memcpy(lastSentReport, report, KEY_REPORT_SIZE);
-  lastRepeatMs = millis();
+}
+
+/* Whether a Held key is reported down right now. Without a repeat it
+ * simply follows the input. With one, each press runs a cycle of
+ * repeatMs down then releaseMs up, again and again, without blocking:
+ * the report just omits the key during the up phase.
+ */
+static bool heldKeyDown(uint8_t id, const KeyBinding &key, unsigned long now)
+{
+  if (!activeNow[id])
+    return false;
+  if (key.repeatMs == 0)
+    return true;
+
+  if (risingEdge(id))
+    repeatCycleStartMs[id] = now;
+
+  // Advance by whole periods so the cadence stays exact across loop ticks.
+  unsigned long period = (unsigned long)key.repeatMs + key.releaseMs;
+  while (now - repeatCycleStartMs[id] >= period)
+    repeatCycleStartMs[id] += period;
+
+  return now - repeatCycleStartMs[id] < key.repeatMs;
 }
 
 // DMD2 and OsmAnd: the report mirrors the active inputs.
@@ -155,17 +180,15 @@ static void updateKeyboardMode(const ModeKeymap &map)
 {
   uint8_t report[KEY_REPORT_SIZE] = {HID_KEY_NONE};
   uint8_t count = 0;
-  uint16_t repeatMs = 0;
   unsigned long now = millis();
 
   for (uint8_t id = 0; id < BUTTON_COUNT; id++)
   {
     const KeyBinding &key = map.keys[id];
-    if (key.kind == KeyKind::Held && activeNow[id])
+    if (key.kind == KeyKind::Held)
     {
-      pushKey(report, count, (uint8_t)key.code);
-      if (key.repeatMs > 0 && (repeatMs == 0 || key.repeatMs < repeatMs))
-        repeatMs = key.repeatMs;
+      if (heldKeyDown(id, key, now))
+        pushKey(report, count, (uint8_t)key.code);
     }
     else if (key.kind == KeyKind::Tap && risingEdge(id))
     {
@@ -187,16 +210,6 @@ static void updateKeyboardMode(const ModeKeymap &map)
   {
     sendReport(report);
     debugPrintf("%s key report sent (%u keys).\n", map.name, count);
-    return;
-  }
-
-  // Firmware repeat: a short release, then the same report again.
-  if (!reportIsEmpty(report) && repeatMs > 0 && now - lastRepeatMs >= repeatMs)
-  {
-    const uint8_t released[KEY_REPORT_SIZE] = {HID_KEY_NONE};
-    bleSendKeyboardReport(released);
-    delay(REPEAT_RELEASE_GAP_MS);
-    sendReport(report);
   }
 }
 

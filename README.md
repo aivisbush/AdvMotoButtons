@@ -55,7 +55,10 @@ long press itself (see the [controller implementation guide](Docs/dmd2-controlle
 - Button A - `+` / zoom in (repeats)
 - Button B - `-` / zoom out (repeats)
 - Button C - `C` / move to my location (once per press)
-- Joystick Up, Down, Left, Right - arrow keys (repeat)
+- Joystick Up, Down, Left, Right - move the map. While held, the arrow is tapped (30 ms down, 30 ms
+  up) so that OsmAnd adds its 200 px nudge on every tap on top of its own slow scroll. Tune
+  `OSMAND_DIRECTION_KEY_DOWN_MS` and `OSMAND_DIRECTION_KEY_UP_MS` in config.h; keep both at or above
+  the Bluetooth connection interval, which the serial log shows at connect
 - Joystick centre - unbound
 
 `Media` mode - media keys:

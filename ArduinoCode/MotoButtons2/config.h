@@ -86,13 +86,34 @@ constexpr uint16_t CHORD_GRACE_MS = 50;
 // How long an edge-triggered keyboard key (OsmAnd C) stays down.
 constexpr uint16_t KEY_TAP_MS = 20;
 
-// Gap between the release and re-press that make up a firmware repeat.
+// Key-up gap inside a zoom-key repeat cycle, and the gap between press and
+// release of a consumer (media) key.
 constexpr uint16_t REPEAT_RELEASE_GAP_MS = 5;
 
 // Firmware repeat intervals. DMD2 gets none: it implements repeat itself.
-constexpr uint16_t DIRECTION_REPEAT_INTERVAL_MS = 100;
 constexpr uint16_t ABC_REPEAT_INTERVAL_MS = 250;
 constexpr uint16_t VOLUME_REPEAT_INTERVAL_MS = 150;
+
+/* OsmAnd map scrolling. While an arrow is down, OsmAnd scrolls the map
+ * itself at a fixed 1 px per 3 ms, and it adds a 200 px nudge whenever a
+ * press shorter than 250 ms is released. The firmware therefore taps the
+ * arrow while the joystick is held: key down for KEY_DOWN, key up for
+ * KEY_UP, again and again, so every cycle ends in exactly one nudge. The
+ * speed is 200 px plus the smooth scroll during the press, per cycle.
+ *
+ * The Bluetooth link matters more than the numbers themselves. Reports
+ * leave once per connection event, and an up and a down that share one
+ * event reach OsmAnd less than a millisecond apart, where its 3 ms scroll
+ * loop misses the release: no nudge that cycle, and the motion stutters.
+ * Keep both phases at or above one connection interval (logged at connect
+ * when DEBUG is on; typically 7.5 to 15 ms on Android) and OsmAnd sees
+ * every tap. Whole multiples of the interval give the most even cadence.
+ *
+ * KEY_DOWN 0 turns the tapping off: the arrow is simply held and OsmAnd
+ * scrolls smoothly but slowly.
+ */
+constexpr uint16_t OSMAND_DIRECTION_KEY_DOWN_MS = 30;
+constexpr uint16_t OSMAND_DIRECTION_KEY_UP_MS = 30;
 
 // Chord hold times.
 constexpr uint16_t MODE_TOGGLE_MS = 1000;    // B+C mode change, A+B display toggle
