@@ -35,23 +35,32 @@ measurement separates them trivially.
 
 ## What the firmware does now
 
-- `primeJoystickPin()` puts GPIO0..GPIO4 into analog mode once during `setupDigitalIO()` and
-  asserts the internal pull-up, so an open contact still rests at the rail.
-- `readJoystickMillivolts()` re-asserts the pull-up, settles 200 us, and takes the median of three
-  `analogReadMilliVolts()` conversions.
+All of this lives in [inputs.cpp](../ArduinoCode/MotoButtons2/inputs.cpp); the thresholds are in
+[config.h](../ArduinoCode/MotoButtons2/config.h).
+
+- `primeJoystickPin()` puts GPIO0..GPIO4 into analog mode once during `inputsBegin()` and asserts
+  the internal pull-up, so an open contact still rests at the rail.
+- `assertJoystickPullups()` re-asserts all five pull-ups once per scan, then the scan settles 200 us
+  before `readJoystickMillivolts()` takes the median of three `analogReadMilliVolts()` conversions
+  per line.
 - `readJoystickPressed()` applies hysteresis: **pressed at or below `JOYSTICK_PRESS_MV` (200 mV),
   released at or above `JOYSTICK_RELEASE_MV` (500 mV)**, and the band in between keeps the previous
   state. 200 mV is 40x above a real press and 3.5x below the lowest phantom observed.
-- A/B/C are on GPIO7/9/10, which have no ADC, and stay on a majority-of-three digital read.
-- The 120 ms debounce, and rejection of physically impossible direction pairs, sit on top.
+- A/B/C are on GPIO7/9/10, which have no ADC, and stay on a plain digital read.
+- On top sit the debounce (50 ms for the joystick, 40 ms for A/B/C, `DEBOUNCE_*_MS`) and the
+  rejection of physically impossible direction pairs in `directionActive()`.
+
+The debounce used to be 120 ms. That number was raised while the phantom presses were still being
+fought digitally; with the millivolt thresholds doing the real work it has come back down, which
+takes most of the latency out of every press.
 
 ### The trap that broke the first attempt
 
 An earlier version also used `analogRead()` and was *worse* than digital. The reason: **attaching
 the ADC to a pad clears its internal pull-up.** That left every joystick line floating with nothing
 holding it up, so readings drifted anywhere, frequently near zero, which looked exactly like
-presses. Re-asserting `gpio_pullup_en()` after attaching the ADC, and again before each conversion,
-is the whole difference between the two versions.
+presses. Re-asserting `gpio_pullup_en()` after attaching the ADC, and again before each scan, is the
+whole difference between the two versions.
 
 That version also classified a reading of 0 as *released*, which threw away the one value a real
 press actually produces.
@@ -71,8 +80,8 @@ This is a workaround for a hardware fault, not a repair.
 
 ## Reproducing the diagnostics
 
-Set `DEBUG_INPUTS true` at the top of the sketch, flash, open the serial monitor at 115200. Output
-is a snapshot every second plus a line on every debounced transition, e.g.
+Set `DEBUG_INPUTS` to `true` in `config.h`, flash, open the serial monitor at 115200. Output is a
+snapshot every second plus a line on every debounced transition, e.g.
 
 ```
 [   10931] UP     GPIO2  PRESSED   previous state held  10931 ms  line 1660 mV

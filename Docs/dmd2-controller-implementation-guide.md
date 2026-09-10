@@ -136,12 +136,20 @@ This controller has 8 inputs, so it follows the **8 button** scheme:
 | Button B | F7 | `0x40` | `KEYCODE_F7` |
 | Button C | Enter | `0x28` | `KEYCODE_ENTER` |
 
-In DMD2 mode the firmware sends **raw key down on press and key up on release** for every button,
-with no firmware-side auto-repeat and nothing fired on release only. That is the guide's first
-requirement: DMD2 owns repeat on/off, repeat speed and long press, per app section, and can only do
-that if it sees one clean press and one clean release. (OsmAnd and Media modes keep their own key
-repeat, since those apps do not implement it.)
+The table lives in [keymap.cpp](../ArduinoCode/MotoButtons2/keymap.cpp). In DMD2 mode the firmware
+sends **raw key down on press and key up on release** for every button, with no firmware-side
+auto-repeat and nothing fired on release only. That is the guide's first requirement: DMD2 owns
+repeat on/off, repeat speed and long press, per app section, and can only do that if it sees one
+clean press and one clean release. (OsmAnd and Media modes keep their own key repeat, since those
+apps do not implement it.)
 
-The BLE device name is therefore `DMD2 CTL 8K` (`BLE_DEVICE_NAME` in
-[MotoButtons2.ino](../ArduinoCode/MotoButtons2/MotoButtons2.ino)). After changing the name, forget
-the old pairing on the phone and pair again - Android caches the previously advertised name.
+The one deliberate deviation: a lone A, B or C press is reported after a short grace period
+(`CHORD_GRACE_MS`, 50 ms), so that a two-button chord landing within it does not leak its first key
+to DMD2. The press and release DMD2 sees are still one clean pair, just a few tens of milliseconds
+late.
+
+The Bluetooth name is `BLE_DEVICE_NAME` in [config.h](../ArduinoCode/MotoButtons2/config.h). The
+guide prescribes `DMD2 CTL 8K` for this key set; the current build advertises as `Bush Moto OLED`,
+which DMD2 does not recognise. See [dmd2-recognition-notes.md](dmd2-recognition-notes.md) for what
+has been tried. After changing the name, forget the old pairing on the phone and pair again -
+Android caches the previously advertised name.

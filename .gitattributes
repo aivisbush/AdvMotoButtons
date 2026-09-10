@@ -1,0 +1,12 @@
+# Normalise text files in the repository; firmware sources check out with CRLF.
+* text=auto
+*.ino text eol=crlf
+*.h text eol=crlf
+*.cpp text eol=crlf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.stl binary
+*.3mf binary
+*.step binary

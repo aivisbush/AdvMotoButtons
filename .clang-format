@@ -1,0 +1,18 @@
+# Formatting for ArduinoCode/: 2-space indent, Allman braces, 120 columns.
+BasedOnStyle: LLVM
+Language: Cpp
+IndentWidth: 2
+TabWidth: 2
+UseTab: Never
+ColumnLimit: 120
+BreakBeforeBraces: Allman
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortCaseLabelsOnASingleLine: false
+IndentCaseLabels: false
+PointerAlignment: Right
+SortIncludes: Never
+AlignConsecutiveAssignments: None
+AlignTrailingComments: true
+SpacesBeforeTrailingComments: 1

@@ -4,6 +4,10 @@ Goal: have DMD2 treat this controller as a known handlebar remote instead of lis
 *Generic Remote Controller*. Not solved yet. This is the state of the investigation so the next
 session does not repeat it.
 
+The name the firmware advertises is `BLE_DEVICE_NAME` in
+[config.h](../ArduinoCode/MotoButtons2/config.h). **The current build advertises as
+`Bush Moto OLED`**, a name DMD2 does not know, so it is listed as Generic.
+
 ## How DMD2 identifies a controller
 
 From DMD's own (now offline) implementation guide, mirrored at
@@ -22,7 +26,8 @@ requires real HID key **down on press, up on release**, because DMD2 owns repeat
 |---|---|
 | Name `Bush Moto OLED`, center = F8, firmware auto-repeat | Generic |
 | Name `DMD2 CTL 8K`, center = F5 (the published 8-button set), raw key down/up | Still Generic |
-| Name `CICTRL` (Carpe Iter Adventure Control) | Under test - outcome not yet recorded |
+| Name `CICTRL` (Carpe Iter Adventure Control) | Tried; outcome was not recorded |
+| Name `Bush Moto OLED`, center = F5, raw key down/up (current build) | Generic, as expected |
 
 The current key set matches the published 8-button scheme: `ENTER`, four arrows, `F5`, `F6`, `F7`.
 That part is believed correct regardless of the name question.
