@@ -44,22 +44,22 @@ Standard button functionality by mode:
 - Button A short press or hold - `+` / zoom in
 - Button B short press or hold - `-` / zoom out
 - Button C short press or hold - `C` / move to my location (focus)
-- Joystick Up, Down, Left, Right - Arrow keys; while held, the key is repeated every 30 ms so the map scrolls fast
+- Joystick Up, Down, Left, Right - Arrow keys; while held, the key is tapped about 22 times per second so the map scrolls fast (OsmAnd jumps 200 px per tap; the rate is set in the mode table in the code)
 - Joystick Middle press - Unbound
 
 `Media` mode:
-- Button A short press or hold - Play / Pause
-- Button B short press or hold - Screen brightness up
-- Button C short press or hold - Screen brightness down
-- Joystick Up - Volume up
-- Joystick Down - Volume down
+- Button A short press - Play / Pause
+- Button B short press or hold - Screen brightness up (repeats while held)
+- Button C short press or hold - Screen brightness down (repeats while held)
+- Joystick Up - Volume up (repeats while held)
+- Joystick Down - Volume down (repeats while held)
 - Joystick Left - Previous track
 - Joystick Right - Next track
 - Joystick Middle press - Mute
 
 Special functions:
 - Hold one joystick direction (up, down, left or right) while powering on the device to select the orientation. The direction you hold becomes "up" (the three buttons are then on the opposite side). The LED flashes red 1 to 4 times to confirm and the orientation is saved
-- Button A+B long press - LED brightness changes; hold it until you are satisfied and release. The dimmest step turns the LED completely off, the next step wraps back to full brightness
+- Button A+B long press - LED brightness changes; hold it until you are satisfied and release. The dimmest step turns the LED completely off and pauses there for 1.5 s so it is easy to release, then the next step wraps back to full brightness
 - Button B+C long press - Mode change: DMD2 (blue) -> OsmAnd (green) -> Media (magenta)
 - Button A+B+C long press (5 secs) - Clear all Bluetooth bonds and reset settings to defaults (LED flashes red 4 times). This is the workaround to get BT auto-connect working again: afterwards "forget" the device on your phone/tablet and pair it again
 
