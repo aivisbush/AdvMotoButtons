@@ -72,24 +72,27 @@ enum ButtonId { BTN_UP = 0, BTN_DOWN, BTN_LEFT, BTN_RIGHT, BTN_CENTER, BTN_A, BT
 
 typedef enum { DMD2 = 1, OsmAnd = 2, MEDIA = 3 } Mode; // stored in settings file, keep values stable
 // Media: volume/brightness keep stepping while held
-// OsmAnd: fast map scroll by tapping the arrow; 45/40 ms tuned on Android (not tested on iPhone)
-struct KeyMap { uint16_t key[N_BUTTONS]; bool consumer; uint8_t repeatMask; uint16_t repeatDelayMs, repeatIntervalMs, repeatReleaseMs; };
+// OsmAnd: fast map scroll by tapping the arrow (45/40 ms tuned on Android, not tested on iPhone); zoom A/B repeats while held
+struct Repeat { uint8_t mask; uint16_t delayMs, intervalMs, releaseMs; }; // buttons that auto-repeat while held
+#define N_REPEAT 2
+struct KeyMap { uint16_t key[N_BUTTONS]; bool consumer; Repeat rep[N_REPEAT]; };
 struct ModeDef { Mode id; Color color; KeyMap keys; };
 #define DIRECTIONS (BTN_BIT(BTN_UP) | BTN_BIT(BTN_DOWN) | BTN_BIT(BTN_LEFT) | BTN_BIT(BTN_RIGHT))
 
 const ModeDef MODES[] = {
     {DMD2, DMD2_MODE_COLOR,
      {{HID_KEY_ARROW_UP, HID_KEY_ARROW_DOWN, HID_KEY_ARROW_LEFT, HID_KEY_ARROW_RIGHT,
-       HID_KEY_F8, HID_KEY_F6, HID_KEY_F7, HID_KEY_ENTER}, false, 0, 0, 0, 0}},
+       HID_KEY_F8, HID_KEY_F6, HID_KEY_F7, HID_KEY_ENTER}, false, {{0, 0, 0, 0}, {0, 0, 0, 0}}}},
     {OsmAnd, OSMAND_MODE_COLOR,
      {{HID_KEY_ARROW_UP, HID_KEY_ARROW_DOWN, HID_KEY_ARROW_LEFT, HID_KEY_ARROW_RIGHT,
-       HID_KEY_NONE, HID_KEY_EQUAL, HID_KEY_MINUS, HID_KEY_C}, false, DIRECTIONS, 0, 45, 40}},
+       HID_KEY_NONE, HID_KEY_EQUAL, HID_KEY_MINUS, HID_KEY_C}, false,
+      {{DIRECTIONS, 0, 45, 40}, {BTN_BIT(BTN_A) | BTN_BIT(BTN_B), 150, 150, 40}}}},
     {MEDIA, MEDIA_MODE_COLOR,
      {{HID_USAGE_CONSUMER_VOLUME_INCREMENT, HID_USAGE_CONSUMER_VOLUME_DECREMENT,
        HID_USAGE_CONSUMER_SCAN_PREVIOUS, HID_USAGE_CONSUMER_SCAN_NEXT,
        HID_USAGE_CONSUMER_MUTE, HID_USAGE_CONSUMER_PLAY_PAUSE,
-       HID_USAGE_CONSUMER_BRIGHTNESS_INCREMENT, HID_USAGE_CONSUMER_BRIGHTNESS_DECREMENT},
-      true, BTN_BIT(BTN_UP) | BTN_BIT(BTN_DOWN) | BTN_BIT(BTN_B) | BTN_BIT(BTN_C), 400, 150, 0}},
+       HID_USAGE_CONSUMER_BRIGHTNESS_INCREMENT, HID_USAGE_CONSUMER_BRIGHTNESS_DECREMENT}, true,
+      {{BTN_BIT(BTN_UP) | BTN_BIT(BTN_DOWN) | BTN_BIT(BTN_B) | BTN_BIT(BTN_C), 400, 150, 0}, {0, 0, 0, 0}}}},
 };
 #define N_MODES ((uint8_t)(sizeof(MODES) / sizeof(MODES[0])))
 
@@ -150,9 +153,10 @@ uint8_t keyReport[N_KEY_REPORT];
 bool keyReportChanged = false;       // a debounced button changed
 bool forceKeyReport = false;         // send again (key-up of a tap, or retry after failed send)
 bool centerTapPending = false;       // center released, key not yet sent
-bool repeatReleaseSent = false;      // key repeat: key-up sent, key-down due after repeatReleaseMs
 bool consumerReleasePending = false; // consumer key is down, release after CONSUMER_KEY_HOLD_MS
-unsigned long lastRepeatTime = 0, repeatReleaseTime = 0, consumerPressTime = 0;
+unsigned long consumerPressTime = 0;
+struct RepeatState { bool releaseSent; unsigned long lastTime, releaseTime; }; // releaseSent: key-up sent, key-down due
+RepeatState repState[N_REPEAT];
 
 struct Button { uint8_t pin; bool state, prior, flipped; unsigned long time; const char *name; }; // time = last raw change
 Button buttons[N_BUTTONS] = { // direction pins are set by setButtonMapping()
@@ -168,10 +172,11 @@ bool brightnessComboConsumed = false, brightnessSettingsDirty = false;
 
 bool writeSettings();
 void applySteadyLED();
+void resetRepeat();
 
 #if DEBUG
-// debug: serial "r <intervalMs> <releaseMs>" overrides repeat timing
-uint16_t tuneInterval = 0, tuneRelease = 0;
+// debug: serial "r <group> <intervalMs> <releaseMs>" overrides repeat timing of rep[group]
+Repeat tune[N_REPEAT];
 void handleSerialTuning() {
   static char buf[24];
   static uint8_t len = 0;
@@ -179,8 +184,11 @@ void handleSerialTuning() {
     char c = Serial.read();
     if (c == '\n' || c == '\r') {
       buf[len] = 0; len = 0;
-      int i, r;
-      if (sscanf(buf, "r %d %d", &i, &r) == 2) { tuneInterval = i; tuneRelease = r; Serial.print("repeat set: "); Serial.print(i); Serial.print("/"); Serial.println(r); }
+      int g, i, r;
+      if (sscanf(buf, "r %d %d %d", &g, &i, &r) == 3 && g >= 0 && g < N_REPEAT) {
+        tune[g].intervalMs = i; tune[g].releaseMs = r;
+        Serial.print("repeat "); Serial.print(g); Serial.print(" set: "); Serial.print(i); Serial.print("/"); Serial.println(r);
+      }
     } else if (len < sizeof(buf) - 1) buf[len++] = c;
   }
 }
@@ -305,7 +313,8 @@ void clearFlips(uint8_t mask) { for (uint8_t i = 0; i < N_BUTTONS; i++) if (mask
 
 void resetKeyReportState() {
   memset(keyReport, HID_KEY_NONE, N_KEY_REPORT);
-  keyReportChanged = forceKeyReport = repeatReleaseSent = consumerReleasePending = centerTapPending = false;
+  keyReportChanged = forceKeyReport = consumerReleasePending = centerTapPending = false;
+  resetRepeat();
   clearFlips(0xFF);
 }
 
@@ -365,7 +374,8 @@ void handleModeCycleCombo() {
     DEBUG_PRINT("Mode advanced to "); DEBUG_PRINTLN(currentMode);
     releaseAllKeys();
     clearFlips(0xFF);
-    centerTapPending = repeatReleaseSent = modeButtonsReleased = false;
+    centerTapPending = modeButtonsReleased = false;
+    resetRepeat();
     modeComboConsumed = true;
     writeSettings();
     indicateMode(currentMode);
@@ -423,11 +433,15 @@ bool keyActive(uint8_t id) {
   return false;
 }
 
-uint8_t repeatableMask(const KeyMap *map, unsigned long now) {
+uint8_t repeatableMask(const Repeat *rp, unsigned long now) {
   uint8_t mask = 0;
   for (uint8_t id = 0; id < N_BUTTONS; id++)
-    if ((map->repeatMask & BTN_BIT(id)) && keyActive(id) && now - buttons[id].time >= map->repeatDelayMs) mask |= BTN_BIT(id);
+    if ((rp->mask & BTN_BIT(id)) && keyActive(id) && now - buttons[id].time >= rp->delayMs) mask |= BTN_BIT(id);
   return mask;
+}
+
+void resetRepeat() {
+  for (uint8_t s = 0; s < N_REPEAT; s++) repState[s] = {false, millis(), 0};
 }
 
 bool buildKeyReport(const KeyMap *map, uint8_t suppressMask) { // returns true if the center tap is included
@@ -475,7 +489,7 @@ void handleConsumerKeys(const KeyMap *map) {
     if (id == BTN_CENTER || !buttons[id].flipped) continue;
     if (keyActive(id)) {
       if (!sendConsumerKey(map->key[id])) return;
-      lastRepeatTime = now;
+      for (uint8_t s = 0; s < N_REPEAT; s++) repState[s].lastTime = now;
       buttons[id].flipped = false;
       return;
     }
@@ -486,10 +500,12 @@ void handleConsumerKeys(const KeyMap *map) {
     centerTapPending = false;
     return;
   }
-  uint8_t rep = repeatableMask(map, now);
-  if (rep && now - lastRepeatTime >= map->repeatIntervalMs)
+  for (uint8_t s = 0; s < N_REPEAT; s++) {
+    uint8_t rep = repeatableMask(&map->rep[s], now);
+    if (!rep || now - repState[s].lastTime < map->rep[s].intervalMs) continue;
     for (uint8_t id = 0; id < N_BUTTONS; id++)
-      if (rep & BTN_BIT(id)) { if (sendConsumerKey(map->key[id])) lastRepeatTime = now; return; }
+      if (rep & BTN_BIT(id)) { if (sendConsumerKey(map->key[id])) repState[s].lastTime = now; return; }
+  }
 }
 
 void handleKeyReports() {
@@ -499,24 +515,30 @@ void handleKeyReports() {
   if (consumerReleasePending && now - consumerPressTime >= CONSUMER_KEY_HOLD_MS && blehid.consumerKeyRelease())
     consumerReleasePending = false;
   if (map->consumer) {
-    forceKeyReport = repeatReleaseSent = false;
+    forceKeyReport = false;
     if (!consumerReleasePending) handleConsumerKeys(map);
     return;
   }
 
-  uint8_t rep = repeatableMask(map, now);
-  uint16_t intervalMs = map->repeatIntervalMs, releaseMs = map->repeatReleaseMs;
+  // each repeat group cycles key-down (interval - release) / key-up (release); suppress = keys currently in key-up
+  bool phaseChanged = false;
+  uint8_t suppress = 0;
+  for (uint8_t s = 0; s < N_REPEAT; s++) {
+    Repeat rp = map->rep[s];
 #if DEBUG
-  if (tuneInterval) { intervalMs = tuneInterval; releaseMs = tuneRelease; }
+    if (tune[s].intervalMs) { rp.intervalMs = tune[s].intervalMs; rp.releaseMs = tune[s].releaseMs; }
 #endif
-  if (keyReportChanged || forceKeyReport || (repeatReleaseSent && now - repeatReleaseTime >= releaseMs)) {
-    forceKeyReport = repeatReleaseSent = false;
-    sendKeyboardReport(map, 0);
-    lastRepeatTime = now;
-  } else if (rep && !repeatReleaseSent) { // repeat: key-up phase
-    uint16_t downMs = intervalMs > releaseMs ? intervalMs - releaseMs : 0;
-    if (now - lastRepeatTime >= downMs && sendKeyboardReport(map, rep)) { repeatReleaseSent = true; repeatReleaseTime = now; }
-  } else if (!rep) lastRepeatTime = now;
+    RepeatState &st = repState[s];
+    uint8_t rep = repeatableMask(&rp, now);
+    if (!rep) { st.releaseSent = false; st.lastTime = now; continue; }
+    if (st.releaseSent) {
+      if (now - st.releaseTime >= rp.releaseMs) { st.releaseSent = false; st.lastTime = now; phaseChanged = true; }
+      else suppress |= rep;
+    } else if (now - st.lastTime >= (unsigned long)(rp.intervalMs > rp.releaseMs ? rp.intervalMs - rp.releaseMs : 0)) {
+      st.releaseSent = true; st.releaseTime = now; suppress |= rep; phaseChanged = true;
+    }
+  }
+  if (keyReportChanged || forceKeyReport || phaseChanged) { forceKeyReport = false; sendKeyboardReport(map, suppress); }
 }
 
 /*----------------------------- Settings -----------------------------*/
