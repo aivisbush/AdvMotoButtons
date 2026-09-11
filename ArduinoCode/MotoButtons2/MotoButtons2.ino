@@ -158,12 +158,12 @@ unsigned long consumerPressTime = 0;
 struct RepeatState { bool releaseSent; unsigned long lastTime, releaseTime; }; // releaseSent: key-up sent, key-down due
 RepeatState repState[N_REPEAT];
 
-struct Button { uint8_t pin; bool state, prior, flipped; unsigned long time; const char *name; }; // time = last raw change
+struct Button { uint8_t pin; bool state, prior, flipped; unsigned long time, edge; const char *name; }; // time = press, edge = last raw change
 Button buttons[N_BUTTONS] = { // direction pins are set by setButtonMapping()
-    {PIN_JOYSTICK_RIGHT, false, false, false, 0, "UP"}, {PIN_JOYSTICK_LEFT, false, false, false, 0, "DOWN"},
-    {PIN_JOYSTICK_UP, false, false, false, 0, "LEFT"},  {PIN_JOYSTICK_DOWN, false, false, false, 0, "RIGHT"},
-    {PIN_JOYSTICK_CENTER, false, false, false, 0, "CENTER"},
-    {PIN_BUTTON_A, false, false, false, 0, "A"}, {PIN_BUTTON_B, false, false, false, 0, "B"}, {PIN_BUTTON_C, false, false, false, 0, "C"},
+    {PIN_JOYSTICK_RIGHT, false, false, false, 0, 0, "UP"}, {PIN_JOYSTICK_LEFT, false, false, false, 0, 0, "DOWN"},
+    {PIN_JOYSTICK_UP, false, false, false, 0, 0, "LEFT"},  {PIN_JOYSTICK_DOWN, false, false, false, 0, 0, "RIGHT"},
+    {PIN_JOYSTICK_CENTER, false, false, false, 0, 0, "CENTER"},
+    {PIN_BUTTON_A, false, false, false, 0, 0, "A"}, {PIN_BUTTON_B, false, false, false, 0, 0, "B"}, {PIN_BUTTON_C, false, false, false, 0, 0, "C"},
 };
 
 bool modeButtonsReleased = true, modeComboConsumed = false, bondResetComboConsumed = false;
@@ -278,15 +278,17 @@ bool setButtonMapping(uint8_t buttMap) {
   return false;
 }
 
+// press: 2 consecutive samples (immediate); release: contact low for DEBOUNCE_TIME_MS (chatter while held is ignored)
 bool debounceButton(Button &b) {
   bool reading = digitalRead(b.pin);
-  unsigned long readTime = millis();
+  unsigned long now = millis();
   bool stateChanged = false;
-  if (reading != b.prior) b.time = readTime;
-  else if (readTime - b.time > DEBOUNCE_TIME_MS && reading != b.state) {
-    stateChanged = b.flipped = true;
-    b.state = reading;
-    if (DEBUG) { Serial.print("Button "); Serial.print(b.name); Serial.println(reading ? " pressed" : " released"); }
+  if (reading != b.prior) b.edge = now;
+  if (reading && b.prior && !b.state) { b.state = true; b.time = now; stateChanged = true; }
+  else if (!reading && b.state && now - b.edge > DEBOUNCE_TIME_MS) { b.state = false; stateChanged = true; }
+  if (stateChanged) {
+    b.flipped = true;
+    if (DEBUG) { Serial.print("Button "); Serial.print(b.name); Serial.println(b.state ? " pressed" : " released"); }
   }
   b.prior = reading;
   return stateChanged;
@@ -538,7 +540,11 @@ void handleKeyReports() {
       st.releaseSent = true; st.releaseTime = now; suppress |= rep; phaseChanged = true;
     }
   }
-  if (keyReportChanged || forceKeyReport || phaseChanged) { forceKeyReport = false; sendKeyboardReport(map, suppress); }
+  if (keyReportChanged || forceKeyReport || phaseChanged) {
+    bool changed = keyReportChanged;
+    forceKeyReport = false;
+    if (sendKeyboardReport(map, suppress) && changed) DEBUG_PRINTLN("Report sent");
+  }
 }
 
 /*----------------------------- Settings -----------------------------*/
