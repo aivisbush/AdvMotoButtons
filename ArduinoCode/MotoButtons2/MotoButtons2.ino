@@ -39,21 +39,22 @@ const char BLE_MANUFACTURER[] = "Bush";
 #define PIN_JOYSTICK_DOWN 10
 
 /*---- 3. RGB COLORS ----*/
-typedef enum { Red, Blue, Green, Magenta, White, Off, N_COLORS } Color;
+typedef enum { Red, Blue, Green, Magenta, White, Orange, Off, N_COLORS } Color;
 const uint8_t COLOR_RGB[N_COLORS][3] = {
     {255, 0, 0},     // Red
     {0, 0, 255},     // Blue
     {0, 255, 0},     // Green
     {245, 0, 245},   // Magenta
     {245, 245, 245}, // White
+    {255, 60, 0},    // Orange
     {0, 0, 0},       // Off
 };
 // states
-#define POWER_ON_COLOR Red           // steady while booting
-#define SETUP_COMPLETE_COLOR White   // steady once BLE is up
+#define POWER_ON_COLOR Orange        // steady while booting
+#define SETUP_COMPLETE_COLOR Orange   // steady once BLE is up
 #define BLE_COLOR Blue               // blinking while not connected
-#define BUTTON_ORIENTATION_COLOR Red // orientation+1 flashes after orientation change at power-on
-#define BOND_RESET_COLOR Red         // 4 flashes after bond reset
+#define BUTTON_ORIENTATION_COLOR Orange // orientation+1 flashes after orientation change at power-on
+#define BOND_RESET_COLOR Orange         // 4 flashes after bond reset
 // modes: steady while connected, one long blink on mode change
 #define DMD2_MODE_COLOR Blue
 #define OSMAND_MODE_COLOR Green
