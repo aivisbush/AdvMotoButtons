@@ -34,7 +34,7 @@ The device has:
 Standard button functionality by mode:
 
 `DMD2` mode (**NOTE**: bound buttons manually in Settings -> Setup Remote Controller):
-- Button A short press or hold - `F6` / oom in
+- Button A short press or hold - `F6` / zoom in
 - Button B short press or hold - `F7` / zoom out
 - Button C short press or hold - `Enter` / follow toggle (focus)
 - Joystick Up, Down, Left, Right - Arrow keys
@@ -44,25 +44,32 @@ Standard button functionality by mode:
 - Button A short press or hold - `+` / zoom in
 - Button B short press or hold - `-` / zoom out
 - Button C short press or hold - `C` / move to my location (focus)
-- Joystick Up, Down, Left, Right - Arrow keys
+- Joystick Up, Down, Left, Right - Arrow keys; while held, the key is tapped about 22 times per second so the map scrolls fast (OsmAnd jumps 200 px per tap; the rate is set in the mode table in the code)
 - Joystick Middle press - Unbound
 
 `Media` mode:
-- Button A short press or hold - Play / Pause
-- Button B short press or hold - Screen brightness up
-- Button C short press or hold - Screen brightness down
-- Joystick Up - Volume up
-- Joystick Down - Volume down
+- Button A short press - Play / Pause
+- Button B short press or hold - Screen brightness up (repeats while held)
+- Button C short press or hold - Screen brightness down (repeats while held)
+- Joystick Up - Volume up (repeats while held)
+- Joystick Down - Volume down (repeats while held)
 - Joystick Left - Previous track
 - Joystick Right - Next track
 - Joystick Middle press - Mute
 
 Special functions:
-- Hold joystick up button when powering on device, it will select correct orientation
-- Button A+B long press - LED brightness changes; hold it until you are satisfied and release
+- Hold one joystick direction (up, down, left or right) while powering on the device to select the orientation. The direction you hold becomes "up" (the three buttons are then on the opposite side). The LED flashes orange 1 to 4 times to confirm and the orientation is saved. Do not hold the joystick middle button or the "down" contact while powering on: those pins select the ESP32-C3 boot mode
+- Button A+B long press - LED brightness changes; hold it until you are satisfied and release. The dimmest step turns the LED completely off and pauses there for 1.5 s so it is easy to release, then the next step wraps back to full brightness
 - Button B+C long press - Mode change: DMD2 (blue) -> OsmAnd (green) -> Media (magenta)
-- Button A+B+C long press (5 secs) - Reset saved settings and Bluetooth bonds. Use this if automatic reconnection stops working
-- Button A+C long press (5 secs) - Restart the controller
+- Button A+B+C long press (5 secs) - Clear all Bluetooth bonds and reset settings to defaults (LED flashes orange 4 times). This is the workaround to get BT auto-connect working again: afterwards "forget" the device on your phone/tablet and pair it again
+
+Programming: the Arduino IDE resets the device into download mode automatically when uploading. If that fails, hold the BOOT button, tap RESET and release BOOT (see [Programming](Programming/README.md)).
+
+LED indicator:
+- Steady orange - powering on
+- Blinking blue - not connected, waiting for the phone/tablet
+- Steady blue / green / magenta - connected, showing the current mode
+- One long blink in the mode color - mode was changed (or selected at power on)
 
 
 ## Wiring
