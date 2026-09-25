@@ -67,8 +67,8 @@ Locus, enable **Settings > Controlling > Use hardware buttons**; the pan distanc
 - Button A - volume up / zoom in (repeats). Locus zooms in only on `KEYCODE_PLUS` or volume up, and
   a Bluetooth keyboard cannot send `KEYCODE_PLUS`
 - Button B - `-` / zoom out (repeats)
-- Button C - `C` / follow my position on/off (once per press). Locus moves the map on the next GPS
-  fix, so it can take a few seconds with a weak signal; pressing again turns following off
+- Button C - `C` / follow my position on/off (held while pressed). Locus moves the map on the next
+  GPS fix: at once with a good fix, a few seconds with a weak signal; pressing again turns following off
 - Joystick Up, Down, Left, Right - arrow keys, raw key down / key up as in DMD2; Locus moves the map
 - Joystick centre - unbound
 

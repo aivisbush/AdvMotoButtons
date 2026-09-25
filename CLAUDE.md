@@ -103,8 +103,8 @@ injection, screen recording against Samsung's `interceptKeyTq` log times): Shift
 do not zoom; `KEYCODE_PLUS` or volume up do, and no HID keyboard usage produces `KEYCODE_PLUS`, so A
 sends consumer volume up. `C` does not jump to the position: it *toggles* follow-GPS mode, and the
 map moves on the next location fix (seconds indoors, ~1 s with a good fix), so a second press cancels
-it. The on-screen button centres at once; no key does. C is a `Tap` (`KEY_TAP_MS` 50, above the 40 ms
-connection interval seen), one toggle per press. Arrows are raw down/up like DMD2; Locus pans by its
+it. The on-screen button centres at once; no key does. C is `Held` for the press, confirmed on the
+bike phone to centre at once with a real GPS fix. Arrows are raw down/up like DMD2; Locus pans by its
 *Map movement step* setting.
 
 **The BLE device name is functional, not cosmetic.** DMD2 picks a button scheme by matching the
