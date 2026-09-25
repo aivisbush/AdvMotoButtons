@@ -24,7 +24,7 @@ struct ModeKeymap
 {
   Mode mode;
   const char *name;
-  bool consumerPage;              // true: all bindings are consumer usages
+  bool consumerPage;              // true: all bindings are consumer usages, no keyboard report
   KeyBinding keys[BUTTON_COUNT];  // in ButtonId order: UP DOWN LEFT RIGHT CENTER A B C
 };
 
@@ -53,6 +53,21 @@ static const ModeKeymap KEYMAPS[] = {
     {KeyKind::Held, HID_KEY_EQUAL, ABC_REPEAT_INTERVAL_MS, REPEAT_RELEASE_GAP_MS},   // zoom in
     {KeyKind::Held, HID_KEY_MINUS, ABC_REPEAT_INTERVAL_MS, REPEAT_RELEASE_GAP_MS},   // zoom out
     {KeyKind::Tap, HID_KEY_C, 0, 0},                                                  // move to my location
+  }},
+  // Locus: arrows are held for the press, as in DMD2; Locus moves the map
+  // itself. C toggles follow-GPS, held for the press. It zooms in on
+  // KEYCODE_PLUS or volume up only, and no keyboard usage gives
+  // KEYCODE_PLUS, hence the volume key.
+  // Needs Settings > Controlling > Use hardware buttons in Locus.
+  {Mode::Locus, "Locus", false, {
+    {KeyKind::Held, HID_KEY_ARROW_UP, 0, 0},
+    {KeyKind::Held, HID_KEY_ARROW_DOWN, 0, 0},
+    {KeyKind::Held, HID_KEY_ARROW_LEFT, 0, 0},
+    {KeyKind::Held, HID_KEY_ARROW_RIGHT, 0, 0},
+    {KeyKind::None, HID_KEY_NONE, 0, 0},                                                     // centre unbound
+    {KeyKind::Consumer, HID_USAGE_CONSUMER_VOLUME_INCREMENT, ABC_REPEAT_INTERVAL_MS, 0},    // zoom in
+    {KeyKind::Held, HID_KEY_MINUS, ABC_REPEAT_INTERVAL_MS, REPEAT_RELEASE_GAP_MS},          // zoom out
+    {KeyKind::Held, HID_KEY_C, 0, 0},                                                        // follow GPS on/off
   }},
   // Media keys go out on the consumer page, which iOS requires.
   {Mode::Media, "Media", true, {
@@ -175,7 +190,7 @@ static bool heldKeyDown(uint8_t id, const KeyBinding &key, unsigned long now)
   return now - repeatCycleStartMs[id] < key.repeatMs;
 }
 
-// DMD2 and OsmAnd: the report mirrors the active inputs.
+// DMD2, OsmAnd and Locus: the report mirrors the active inputs.
 static void updateKeyboardMode(const ModeKeymap &map)
 {
   uint8_t report[KEY_REPORT_SIZE] = {HID_KEY_NONE};
@@ -213,7 +228,7 @@ static void updateKeyboardMode(const ModeKeymap &map)
   }
 }
 
-// Media: one consumer pulse per press, repeating for the volume-like keys.
+// Consumer bindings: one pulse per press, repeating for the volume-like keys.
 static void updateConsumerMode(const ModeKeymap &map)
 {
   unsigned long now = millis();
@@ -251,10 +266,10 @@ void keymapUpdate(bool connected, Mode mode)
   }
 
   const ModeKeymap &map = keymapFor(mode);
-  if (map.consumerPage)
-    updateConsumerMode(map);
-  else
+  // Keyboard modes may carry consumer bindings too (Locus zoom in).
+  if (!map.consumerPage)
     updateKeyboardMode(map);
+  updateConsumerMode(map);
 
   memcpy(activeBefore, activeNow, sizeof(activeBefore));
 }

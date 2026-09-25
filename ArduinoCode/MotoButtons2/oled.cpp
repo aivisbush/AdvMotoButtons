@@ -264,9 +264,10 @@ static const uint8_t *modeScreenFont()
   static const uint8_t *font = nullptr;
   if (font == nullptr)
   {
-    const char *const modeNames[] = {getModeName(Mode::DMD2), getModeName(Mode::OsmAnd), getModeName(Mode::Media)};
+    const char *const modeNames[] = {getModeName(Mode::DMD2), getModeName(Mode::OsmAnd), getModeName(Mode::Locus),
+                                     getModeName(Mode::Media)};
     // The mode screen carries the button bar, so the text area is shorter.
-    font = pickFittingFont(modeNames, 3, 1, OLED_WIDTH, OLED_HEIGHT - TEXT_TOP_WITH_BAR, nullptr, nullptr);
+    font = pickFittingFont(modeNames, 4, 1, OLED_WIDTH, OLED_HEIGHT - TEXT_TOP_WITH_BAR, nullptr, nullptr);
   }
   return font;
 }

@@ -1,8 +1,8 @@
 # MotoButtons 2 - project context
 
 Handlebar BLE HID controller for motorcycle navigation. An **ESP32-C3 OLED Mini** board with a
-5-way joystick and three buttons presents itself as a Bluetooth keyboard and drives DMD2, OsmAnd or
-a media player, showing status on a 72x40 OLED.
+5-way joystick and three buttons presents itself as a Bluetooth keyboard and drives DMD2, OsmAnd, Locus
+Map or a media player, showing status on a 72x40 OLED.
 
 Fork of [joncox123/MotoButtons2](https://github.com/joncox123/MotoButtons2), rewritten for the
 ESP32-C3 (the original targets an nRF52840). Work happens on the `esp32c3OLED` branch; `dev` is the
@@ -84,7 +84,8 @@ keeps those pads in analog mode with the pull-up asserted and thresholds on mill
 suppressed by a fired chord), builds the keyboard report those imply, and sends it only when it
 differs from the last one sent. Bindings have a kind: `Held` (down while held), `Tap` (once per
 press, held `KEY_TAP_MS`), `Consumer` (consumer-page pulse, repeating if `repeatMs` is set).
-Firmware repeat exists for OsmAnd and Media only, and never blocks: a `Held` binding with `repeatMs`
+A keyboard mode may also hold `Consumer` bindings (Locus zoom in); the keyboard report never carries
+modifiers. Firmware repeat exists for OsmAnd, Locus zoom and Media only, and never blocks: a `Held` binding with `repeatMs`
 is reported down for `repeatMs` and up for `releaseMs`, per key, by omitting it from the report during
 the up phase. The OsmAnd arrows use `OSMAND_DIRECTION_KEY_DOWN_MS` / `_UP_MS` (30/30): OsmAnd scrolls
 1 px per 3 ms while a key is down and adds a 200 px nudge when a press under 250 ms is released, so
@@ -95,6 +96,16 @@ which `ble_hid.cpp` logs at connect, or OsmAnd misses the release and the motion
 one clean press and one clean release. The only deviation is `CHORD_GRACE_MS` (50 ms) on lone A/B/C
 presses, so chords pressed as one movement do not leak a key.
 See [Docs/dmd2-controller-implementation-guide.md](Docs/dmd2-controller-implementation-guide.md).
+
+**Locus mode** needs *Use hardware buttons* enabled in Locus. Its default keys are arrows (pan),
+`+`/`-` (zoom), `C` centre, `R` rotate, `D` display, `G` GPS. Measured on a Galaxy S21 (adb
+injection, screen recording against Samsung's `interceptKeyTq` log times): Shift+`=` and bare `=`
+do not zoom; `KEYCODE_PLUS` or volume up do, and no HID keyboard usage produces `KEYCODE_PLUS`, so A
+sends consumer volume up. `C` does not jump to the position: it *toggles* follow-GPS mode, and the
+map moves on the next location fix (seconds indoors, ~1 s with a good fix), so a second press cancels
+it. The on-screen button centres at once; no key does. C is a `Tap` (`KEY_TAP_MS` 50, above the 40 ms
+connection interval seen), one toggle per press. Arrows are raw down/up like DMD2; Locus pans by its
+*Map movement step* setting.
 
 **The BLE device name is functional, not cosmetic.** DMD2 picks a button scheme by matching the
 Bluetooth name against its own list. Current name: `Bush Moto OLED` (not recognised, by choice for

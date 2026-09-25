@@ -1,5 +1,5 @@
 /* Button combinations. All of them are among A, B and C:
- *   B+C  held 1 s   next mode (DMD2 -> OsmAnd -> Media)
+ *   B+C  held 1 s   next mode (DMD2 -> OsmAnd -> Locus -> Media)
  *   A+B  held 1 s   OLED on/off
  *   A+C  held 5 s   restart the controller
  *   A+B+C held 5 s  factory reset: settings and Bluetooth bonds

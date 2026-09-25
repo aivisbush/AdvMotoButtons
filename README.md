@@ -2,8 +2,8 @@
 ### Thanks to [the original author](https://github.com/joncox123/MotoButtons2/tree/main) for free sourcing this amazing piece of art, especially the dev board wiring and the code part! So, I needed some modifications to it to move forward to perfection. To continue supporting enduro, offroad, adventure enthusiasts who can also tinker with electronics, and build a relatively inexpensive alternative to moto buttons, I also want to share my work.
 
 A handlebar Bluetooth controller for motorcycle navigation. An **ESP32-C3 OLED Mini** board with a
-5-way joystick and three buttons presents itself as a Bluetooth keyboard and drives DMD2, OsmAnd or
-a media player, showing what it is doing on the board's 72x40 OLED.
+5-way joystick and three buttons presents itself as a Bluetooth keyboard and drives DMD2, OsmAnd, Locus
+Map or a media player, showing what it is doing on the board's 72x40 OLED.
 
 ### My changes against the original
 - Runs on the ESP32-C3 OLED Mini instead of the nRF52840. The onboard OLED replaces the RGB LED as
@@ -40,7 +40,7 @@ The device has:
 - the onboard 72x40 OLED and one status LED as indicators
 
 ### Modes
-Hold **B+C** for one second to step through the modes: DMD2 -> OsmAnd -> Media -> DMD2. The mode is
+Hold **B+C** for one second to step through the modes: DMD2 -> OsmAnd -> Locus -> Media -> DMD2. The mode is
 remembered across power cycles.
 
 `DMD2` mode - raw key down on press and key up on release for every input; DMD2 handles repeat and
@@ -59,6 +59,17 @@ long press itself (see the [controller implementation guide](Docs/dmd2-controlle
   up) so that OsmAnd adds its 200 px nudge on every tap on top of its own slow scroll. Tune
   `OSMAND_DIRECTION_KEY_DOWN_MS` and `OSMAND_DIRECTION_KEY_UP_MS` in config.h; keep both at or above
   the Bluetooth connection interval, which the serial log shows at connect
+- Joystick centre - unbound
+
+`Locus` mode - for [Locus Map](https://play.google.com/store/apps/details?id=menion.android.locus). In
+Locus, enable **Settings > Controlling > Use hardware buttons**; the pan distance per press is
+**Map movement step** in the expert settings:
+- Button A - volume up / zoom in (repeats). Locus zooms in only on `KEYCODE_PLUS` or volume up, and
+  a Bluetooth keyboard cannot send `KEYCODE_PLUS`
+- Button B - `-` / zoom out (repeats)
+- Button C - `C` / follow my position on/off (once per press). Locus moves the map on the next GPS
+  fix, so it can take a few seconds with a weak signal; pressing again turns following off
+- Joystick Up, Down, Left, Right - arrow keys, raw key down / key up as in DMD2; Locus moves the map
 - Joystick centre - unbound
 
 `Media` mode - media keys:

@@ -17,7 +17,7 @@ Settings settings;
 
 static bool isValidMode(uint8_t mode)
 {
-  return mode >= (uint8_t)Mode::DMD2 && mode <= (uint8_t)Mode::Media;
+  return mode >= (uint8_t)Mode::DMD2 && mode <= (uint8_t)LAST_MODE;
 }
 
 void settingsApplyDefaults()

@@ -191,15 +191,20 @@ constexpr uint32_t WATCHDOG_TIMEOUT_MS = 10000;
 /* DMD2:   arrows, F5 (centre), F6, F7, Enter - raw key down/up, DMD2
  *         owns repeat and long press
  * OsmAnd: arrows, '+' zoom in, '-' zoom out, 'c' my location
+ * Locus:  arrows, volume up (zoom in), '-' zoom out, 'c' follow GPS
+ *         on/off (Locus moves the map on the next fix)
  * Media:  volume, track skip, mute, play/pause, screen brightness
- * The tables themselves are in keymap.cpp.
+ * The tables themselves are in keymap.cpp. The values are saved, so a new
+ * mode takes the next number, whatever its place in the B+C cycle.
  */
 enum class Mode : uint8_t
 {
   DMD2 = 1,
   OsmAnd = 2,
-  Media = 3
+  Media = 3,
+  Locus = 4
 };
+constexpr Mode LAST_MODE = Mode::Locus;
 constexpr Mode DEFAULT_MODE = Mode::DMD2;
 
 /*---------------------------- HID CODES -----------------------------*/

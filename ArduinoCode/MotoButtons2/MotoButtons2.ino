@@ -1,7 +1,7 @@
 /*********************************************************************
 License: GNU GENERAL PUBLIC LICENSE; Version 3, 29 June 2007
 MotoButtons 2 - handlebar BLE HID controller for motorcycle navigation.
-Device: ESP32-C3 OLED Mini. Modes: DMD2, OsmAnd, Media.
+Device: ESP32-C3 OLED Mini. Modes: DMD2, OsmAnd, Locus, Media.
 
 This file holds setup() and loop() plus the board-level odds and ends
 (status LED, boot orientation window, watchdog). Everything else is in
