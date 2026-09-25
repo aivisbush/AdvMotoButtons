@@ -171,6 +171,12 @@ constexpr char BLE_DEVICE_NAME[] = "Bush Moto OLED";
 constexpr char BLE_MANUFACTURER[] = "Bush";
 constexpr int8_t BLE_TX_POWER_DBM = 9;
 
+/* Generic HID, not HID keyboard: Samsung takes a keyboard appearance as a
+ * physical keyboard and hides the on-screen one. The phone stores it at
+ * pairing, so a change needs forget and re-pair.
+ */
+constexpr uint16_t BLE_APPEARANCE = 0x03C0;
+
 /* Once a phone has bonded, advertise to bonded phones only so that a
  * stranger's phone cannot grab the controller at a fuel stop. If no
  * bonded phone connects within the fallback time, advertising opens up

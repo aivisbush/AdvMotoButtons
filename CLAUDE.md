@@ -107,6 +107,16 @@ it. The on-screen button centres at once; no key does. C is `Held` for the press
 bike phone to centre at once with a real GPS fix. Arrows are raw down/up like DMD2; Locus pans by its
 *Map movement step* setting.
 
+**The controller must not look like a typing keyboard**, or Android hides the on-screen keyboard.
+Two independent checks, both verified on a Galaxy S21 (nRF52840 branch, same fix here):
+1. Android marks a device `ALPHAKEY` when its declared keys include `Q`. So the keyboard collection
+   is an array over only the usages the modes send, built at start-up from `keymapKeyboardKeys()`;
+   the report carries each key's index + 1, translated in `bleSendKeyboardReport()`. No modifiers.
+2. Samsung's Bluetooth stack flags `isKeyboard` from the peripheral minor class 0x540, which it
+   derives from the BLE appearance. `BLE_APPEARANCE` is generic HID (0x03C0), set in advertising
+   and in the GAP service.
+Both are cached at pairing: any change to the key set or appearance needs forget + re-pair.
+
 **The BLE device name is functional, not cosmetic.** DMD2 picks a button scheme by matching the
 Bluetooth name against its own list. Current name: `Bush Moto OLED` (not recognised, by choice for
 now). See [Docs/dmd2-recognition-notes.md](Docs/dmd2-recognition-notes.md).

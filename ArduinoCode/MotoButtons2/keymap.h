@@ -18,3 +18,5 @@ Mode getNextMode(Mode mode);
 void keymapUpdate(bool connected, Mode mode);
 // Sends an empty keyboard report if anything is down and forgets edges.
 void keymapReleaseAll();
+// Every keyboard usage any mode sends, each once; returns the count.
+uint8_t keymapKeyboardKeys(uint8_t keys[], uint8_t maxKeys);

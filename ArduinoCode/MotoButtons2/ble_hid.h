@@ -1,5 +1,7 @@
 /* Bluetooth HID: a keyboard report (six keys, no modifiers) plus a
- * consumer-control report for media keys. Bonding with Just Works
+ * consumer-control report for media keys. The keyboard declares only the
+ * keys the modes use, with no letter Q, so Android does not take it for a
+ * typing keyboard and keeps the on-screen keyboard. Bonding with Just Works
  * pairing; once bonded, advertising is restricted to bonded phones, see
  * BLE_WHITELIST_BONDED in config.h.
  */

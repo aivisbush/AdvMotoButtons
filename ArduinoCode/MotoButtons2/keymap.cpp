@@ -281,3 +281,23 @@ void keymapReleaseAll()
     sendReport(released);
   tapActive = false;
 }
+
+uint8_t keymapKeyboardKeys(uint8_t keys[], uint8_t maxKeys)
+{
+  uint8_t count = 0;
+  for (uint8_t m = 0; m < KEYMAP_COUNT; m++)
+  {
+    for (uint8_t id = 0; id < BUTTON_COUNT; id++)
+    {
+      const KeyBinding &key = KEYMAPS[m].keys[id];
+      if (key.kind != KeyKind::Held && key.kind != KeyKind::Tap)
+        continue;
+      bool known = false;
+      for (uint8_t i = 0; i < count; i++)
+        known |= keys[i] == key.code;
+      if (!known && count < maxKeys)
+        keys[count++] = (uint8_t)key.code;
+    }
+  }
+  return count;
+}

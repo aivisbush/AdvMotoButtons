@@ -1,38 +1,35 @@
 #include "ble_hid.h"
+#include "keymap.h"
 #include "debug.h"
 #include <NimBLEDevice.h>
 #include <NimBLEHIDDevice.h>
 
+extern "C" int ble_svc_gap_device_appearance_set(uint16_t appearance);
+
 static const uint8_t KEYBOARD_REPORT_ID = 1;
 static const uint8_t CONSUMER_REPORT_ID = 2;
+static const uint8_t MAX_KEYBOARD_KEYS = 16;
+static_assert(KEY_REPORT_SIZE == 6, "Report Count in KEYBOARD_DESCRIPTOR_HEAD");
 
-// Separate keyboard and consumer-control input reports.
-static const uint8_t HID_REPORT_DESCRIPTOR[] = {
+// Keyboard: an array over the listed usages, each report value is the
+// usage's index + 1 (0 = no key). The usage list is filled in at start-up.
+static const uint8_t KEYBOARD_DESCRIPTOR_HEAD[] = {
   0x05, 0x01,       // Usage Page (Generic Desktop)
   0x09, 0x06,       // Usage (Keyboard)
   0xA1, 0x01,       // Collection (Application)
   0x85, 0x01,       //   Report ID (1)
   0x05, 0x07,       //   Usage Page (Keyboard)
-  0x19, 0xE0,       //   Usage Minimum (Left Control)
-  0x29, 0xE7,       //   Usage Maximum (Right GUI)
-  0x15, 0x00,       //   Logical Minimum (0)
-  0x25, 0x01,       //   Logical Maximum (1)
-  0x75, 0x01,       //   Report Size (1)
-  0x95, 0x08,       //   Report Count (8)
-  0x81, 0x02,       //   Input (Data, Variable, Absolute)
-  0x95, 0x01,       //   Report Count (1)
   0x75, 0x08,       //   Report Size (8)
-  0x81, 0x01,       //   Input (Constant)
   0x95, 0x06,       //   Report Count (6)
-  0x75, 0x08,       //   Report Size (8)
-  0x15, 0x00,       //   Logical Minimum (0)
-  0x25, 0x65,       //   Logical Maximum (101)
-  0x05, 0x07,       //   Usage Page (Keyboard)
-  0x19, 0x00,       //   Usage Minimum (Reserved)
-  0x29, 0x65,       //   Usage Maximum (Keyboard Application)
+  0x15, 0x01,       //   Logical Minimum (1)
+  0x25              //   Logical Maximum (key count follows)
+};
+static const uint8_t KEYBOARD_DESCRIPTOR_TAIL[] = {
   0x81, 0x00,       //   Input (Data, Array, Absolute)
-  0xC0,             // End Collection
+  0xC0              // End Collection
+};
 
+static const uint8_t CONSUMER_DESCRIPTOR[] = {
   0x05, 0x0C,       // Usage Page (Consumer)
   0x09, 0x01,       // Usage (Consumer Control)
   0xA1, 0x01,       // Collection (Application)
@@ -46,6 +43,41 @@ static const uint8_t HID_REPORT_DESCRIPTOR[] = {
   0x81, 0x00,       //   Input (Data, Array, Absolute)
   0xC0              // End Collection
 };
+
+static uint8_t keyboardKeys[MAX_KEYBOARD_KEYS];
+static uint8_t keyboardKeyCount = 0;
+static uint8_t reportDescriptor[sizeof(KEYBOARD_DESCRIPTOR_HEAD) + 1 + 2 * MAX_KEYBOARD_KEYS +
+                                sizeof(KEYBOARD_DESCRIPTOR_TAIL) + sizeof(CONSUMER_DESCRIPTOR)];
+
+static uint16_t buildReportDescriptor()
+{
+  keyboardKeyCount = keymapKeyboardKeys(keyboardKeys, MAX_KEYBOARD_KEYS);
+  uint16_t length = 0;
+  memcpy(reportDescriptor, KEYBOARD_DESCRIPTOR_HEAD, sizeof(KEYBOARD_DESCRIPTOR_HEAD));
+  length += sizeof(KEYBOARD_DESCRIPTOR_HEAD);
+  reportDescriptor[length++] = keyboardKeyCount;
+  for (uint8_t i = 0; i < keyboardKeyCount; i++)
+  {
+    reportDescriptor[length++] = 0x09; // Usage
+    reportDescriptor[length++] = keyboardKeys[i];
+  }
+  memcpy(reportDescriptor + length, KEYBOARD_DESCRIPTOR_TAIL, sizeof(KEYBOARD_DESCRIPTOR_TAIL));
+  length += sizeof(KEYBOARD_DESCRIPTOR_TAIL);
+  memcpy(reportDescriptor + length, CONSUMER_DESCRIPTOR, sizeof(CONSUMER_DESCRIPTOR));
+  length += sizeof(CONSUMER_DESCRIPTOR);
+  debugPrintf("HID keyboard declares %u keys.\n", keyboardKeyCount);
+  return length;
+}
+
+static uint8_t keyboardIndex(uint8_t key)
+{
+  for (uint8_t i = 0; i < keyboardKeyCount; i++)
+  {
+    if (keyboardKeys[i] == key)
+      return i + 1;
+  }
+  return 0;
+}
 
 // HID information flags: the controller wakes the host and is normally
 // connectable, i.e. advertising whenever it is not connected.
@@ -139,6 +171,7 @@ class MotoButtonsServerCallbacks : public NimBLEServerCallbacks
 void bleBegin()
 {
   NimBLEDevice::init(BLE_DEVICE_NAME);
+  ble_svc_gap_device_appearance_set(BLE_APPEARANCE);
   NimBLEDevice::setPower(BLE_TX_POWER_DBM);
   NimBLEDevice::setSecurityAuth(true, false, true); // bonding, no MITM, secure connections
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
@@ -150,13 +183,13 @@ void bleBegin()
   hidDevice->setManufacturer(BLE_MANUFACTURER);
   hidDevice->setPnp(0x02, 0x303A, 0x4001, 0x0200); // USB-IF source, Espressif VID
   hidDevice->setHidInfo(0x00, HID_INFO_REMOTE_WAKE | HID_INFO_NORMALLY_CONNECTABLE);
-  hidDevice->setReportMap((uint8_t *)HID_REPORT_DESCRIPTOR, sizeof(HID_REPORT_DESCRIPTOR));
+  hidDevice->setReportMap(reportDescriptor, buildReportDescriptor());
   keyboardInput = hidDevice->getInputReport(KEYBOARD_REPORT_ID);
   consumerInput = hidDevice->getInputReport(CONSUMER_REPORT_ID);
   hidDevice->setBatteryLevel(100);
 
   NimBLEAdvertising *advertising = NimBLEDevice::getAdvertising();
-  advertising->setAppearance(HID_KEYBOARD);
+  advertising->setAppearance(BLE_APPEARANCE);
   advertising->addServiceUUID(hidDevice->getHidService()->getUUID());
   advertising->enableScanResponse(true);
   advertising->setPreferredParams(0x06, 0x12);
@@ -195,9 +228,9 @@ void bleSendKeyboardReport(const uint8_t keys[KEY_REPORT_SIZE])
   if (!connected || keyboardInput == nullptr)
     return;
 
-  // Modifiers, reserved byte, then the six key slots.
-  uint8_t report[2 + KEY_REPORT_SIZE] = {0};
-  memcpy(&report[2], keys, KEY_REPORT_SIZE);
+  uint8_t report[KEY_REPORT_SIZE];
+  for (uint8_t i = 0; i < KEY_REPORT_SIZE; i++)
+    report[i] = keyboardIndex(keys[i]);
   keyboardInput->setValue(report, sizeof(report));
   keyboardInput->notify();
 }

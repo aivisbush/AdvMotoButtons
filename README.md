@@ -85,6 +85,10 @@ is currently `Bush Moto OLED`. DMD2 recognises controllers by name and does not 
 lists the controller as a Generic Remote Controller; see the
 [recognition notes](Docs/dmd2-recognition-notes.md).
 
+The controller presents itself as a generic HID device that has only the keys the modes use, not as a
+full keyboard, so the phone's on-screen keyboard still appears when you tap a text field. After a
+firmware update that changes this, forget the controller on the phone and pair it again.
+
 ### Button chords
 | Buttons | Hold | Action |
 |---|---|---|
