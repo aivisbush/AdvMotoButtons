@@ -159,15 +159,14 @@ constexpr uint32_t OLED_DIM_AFTER_MS = 30000;
 constexpr uint32_t OLED_BLANK_DISCONNECTED_MS = 60000;
 
 /*------------------------------- BLE --------------------------------*/
-/* DMD2 identifies a controller by matching this Bluetooth name against
- * its own list of known devices. Names published for DIY builders:
- *   "DMD2 CTL 8K" - the DMD name for 8 button controllers
- *   "CICTRL"      - Carpe Iter Adventure Control
- *   "BarButtons"  - JaxeADV BarButtons, a DMD2 certified controller
+/* DMD2 takes plain keys only as its paid Generic Remote Controller. Its
+ * DMD Remote slots are fed by the DMD Manage app, which accepts a remote
+ * whose name contains "DMD-Remote1".."4". Remote 3 takes plain HID keys;
+ * its buttons are assigned in DMD2's remote settings.
  * Any name change needs the phone to forget the pairing before
  * re-pairing. See Docs/dmd2-recognition-notes.md.
  */
-constexpr char BLE_DEVICE_NAME[] = "Bush Moto OLED";
+constexpr char BLE_DEVICE_NAME[] = "DMD-Remote3";
 constexpr char BLE_MANUFACTURER[] = "Bush";
 constexpr int8_t BLE_TX_POWER_DBM = 9;
 

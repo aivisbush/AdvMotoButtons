@@ -35,3 +35,6 @@
 # Local build/reference artifacts
 .build/
 reference/
+
+# DMD Manage is THORK Racing's app: download it, do not commit it
+*.apk

@@ -81,13 +81,40 @@ Locus, enable **Settings > Controlling > Use hardware buttons**; the pan distanc
 - Joystick centre - mute (once per press)
 
 The Bluetooth name is set by `BLE_DEVICE_NAME` in [config.h](ArduinoCode/MotoButtons2/config.h) and
-is currently `Bush Moto OLED`. DMD2 recognises controllers by name and does not know this one, so it
-lists the controller as a Generic Remote Controller; see the
-[recognition notes](Docs/dmd2-recognition-notes.md).
+is currently `DMD-Remote3`, so that DMD2 takes the controller as a DMD Remote 3 (see below). After a
+name change, forget the controller on the phone and pair it again.
 
 The controller presents itself as a generic HID device that has only the keys the modes use, not as a
 full keyboard, so the phone's on-screen keyboard still appears when you tap a text field. After a
 firmware update that changes this, forget the controller on the phone and pair it again.
+
+### DMD2 and the DMD Manage app
+DMD2 accepts plain Bluetooth keys only as its paid *Generic Remote Controller*. Its *DMD Remote* slots
+are fed by THORK Racing's **DMD Manage** app instead: its accessibility service takes the keys of a
+device whose name contains `DMD-Remote3` and hands them to DMD2 as Remote 3. So DMD Manage must stay
+installed; without it DMD2 ignores the controller unless the Generic licence is active.
+
+DMD Manage belongs to THORK Racing and is not part of this repository. Download it from their
+[Manage App page](https://docs.dmdnavigation.com/otherapps/manage-app/) (tested: version 3.06,
+`DMD_Manage_v3_06.apk`, SHA-256 `1e0e469bc905de8e6eabf3d10b48e6cbe32b64e87b900b0c1133acd491992188`).
+
+Install it with **adb** from a PC. Installing from the phone is blocked by Google Play Protect (on
+Samsung it ends in "App not installed"), and adb skips that check:
+1. On the phone enable *Developer options* -> *USB debugging* and connect it by USB; allow the PC when
+   asked.
+2. Run `adb install DMD_Manage_v3_06.apk` (`adb` comes with Android SDK Platform Tools). The app does
+   not update itself; install new versions the same way.
+
+Setup:
+1. Open DMD Manage and switch on its **Accessibility** service. The *Display over other apps* request is
+   for the BMW controller overlay and can be skipped.
+2. Pair the controller (`DMD-Remote3`) and press any button on the Controller Detection screen; it shows
+   *DMD Remote3*.
+3. In DMD2 add the device as **Remote 3** and assign each function by pressing the button - Remote 3
+   starts with an empty map. *Back / Locations* returns to your position after panning (*Map Follow
+   Toggle* opens the point menu instead). Double tap works only on the keys set as *Long Press - Remote
+   Menu* (Button 1) or *Long Press - Cancel* (Button 2).
+4. If presses lag, set DMD Manage's battery use to *Unrestricted* so Samsung does not freeze it.
 
 ### Button chords
 | Buttons | Hold | Action |
