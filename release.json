@@ -1,0 +1,5 @@
+{
+  "board": "esp32c3-oled",
+  "sketch": "ArduinoCode/MotoButtons2",
+  "profile": "xiao_esp32c3"
+}

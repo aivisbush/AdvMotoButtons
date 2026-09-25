@@ -19,6 +19,7 @@ the units listed in config.h.
 #include "chords.h"
 #include "oled.h"
 #include "ble_hid.h"
+#include "ota.h"
 
 // Prototypes, so setup() and loop() can come first.
 static void statusLedBegin();
@@ -72,6 +73,7 @@ void loop()
   }
 
   bleUpdate();
+  otaUpdate();
   statusLedUpdate(connected);
   inputsUpdate();
   if (DEBUG_INPUTS)

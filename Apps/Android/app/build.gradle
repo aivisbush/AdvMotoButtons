@@ -1,0 +1,60 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Release signing key lives outside the repository:
+// %USERPROFILE%\.motobuttons\keystore.properties (storeFile, storePassword, keyAlias, keyPassword)
+def keystoreFile = new File(System.getProperty('user.home'), '.motobuttons/keystore.properties')
+def keystore = new Properties()
+if (keystoreFile.exists())
+    keystoreFile.withInputStream { keystore.load(it) }
+
+android {
+    namespace 'com.bush.motobuttons'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.bush.motobuttons'
+        minSdk 26
+        targetSdk 35
+        versionCode 4
+        versionName '1.3'
+    }
+
+    signingConfigs {
+        release {
+            if (keystore['storeFile']) {
+                storeFile new File(keystore['storeFile'])
+                storePassword keystore['storePassword']
+                keyAlias keystore['keyAlias']
+                keyPassword keystore['keyPassword']
+            }
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    buildTypes {
+        debug {
+            // Local copy of the site: python -m http.server 8000 in site/, adb reverse tcp:8000 tcp:8000
+            buildConfigField 'String', 'SITE_URL', '"http://localhost:8000/"'
+        }
+        release {
+            minifyEnabled false
+            signingConfig keystore['storeFile'] ? signingConfigs.release : signingConfigs.debug
+            buildConfigField 'String', 'SITE_URL', '"https://aivisbush.github.io/AdvMotoButtons/"'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'com.google.android.material:material:1.12.0'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+}

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/action_beta"
+        android:checkable="true"
+        android:title="@string/beta_firmware" />
+    <item
+        android:id="@+id/action_use_file"
+        android:title="@string/use_file" />
+</menu>

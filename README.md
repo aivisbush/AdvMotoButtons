@@ -98,23 +98,92 @@ DMD Manage belongs to THORK Racing and is not part of this repository. Download 
 [Manage App page](https://docs.dmdnavigation.com/otherapps/manage-app/) (tested: version 3.06,
 `DMD_Manage_v3_06.apk`, SHA-256 `1e0e469bc905de8e6eabf3d10b48e6cbe32b64e87b900b0c1133acd491992188`).
 
-Install it with **adb** from a PC. Installing from the phone is blocked by Google Play Protect (on
-Samsung it ends in "App not installed"), and adb skips that check:
-1. On the phone enable *Developer options* -> *USB debugging* and connect it by USB; allow the PC when
-   asked.
-2. Run `adb install DMD_Manage_v3_06.apk` (`adb` comes with Android SDK Platform Tools). The app does
-   not update itself; install new versions the same way.
+The easiest way is the [Moto Buttons Tool](#moto-buttons-tool-windows) (*Install DMD support*): it
+downloads DMD Manage, installs it over USB and switches everything on. Installing from the phone itself
+is blocked by Google Play Protect (on Samsung it ends in "App not installed"); `adb install` skips that
+check.
 
-Setup:
-1. Open DMD Manage and switch on its **Accessibility** service. The *Display over other apps* request is
+By hand instead:
+1. On the phone enable *Developer options* -> *USB debugging* and connect it by USB; allow the PC when
+   asked. Run `adb install DMD_Manage_v3_06.apk` (`adb` comes with Android SDK Platform Tools).
+2. Open DMD Manage and switch on its **Accessibility** service. The *Display over other apps* request is
    for the BMW controller overlay and can be skipped.
-2. Pair the controller (`DMD-Remote3`) and press any button on the Controller Detection screen; it shows
+3. Pair the controller (`DMD-Remote3`) and press any button on the Controller Detection screen; it shows
    *DMD Remote3*.
-3. In DMD2 add the device as **Remote 3** and assign each function by pressing the button - Remote 3
+4. Set DMD Manage's battery use to *Unrestricted* so Samsung does not freeze it.
+
+Either way, then:
+1. In DMD2 add the device as **Remote 3** and assign each function by pressing the button - Remote 3
    starts with an empty map. *Back / Locations* returns to your position after panning (*Map Follow
    Toggle* opens the point menu instead). Double tap works only on the keys set as *Long Press - Remote
    Menu* (Button 1) or *Long Press - Cancel* (Button 2).
-4. If presses lag, set DMD Manage's battery use to *Unrestricted* so Samsung does not freeze it.
+
+DMD Manage does not update itself; install new versions the same way.
+
+### Updating from the phone (no PC)
+Open **https://aivisbush.github.io/AdvMotoButtons/** in Chrome on the phone the controller is paired
+with. The page walks through three steps:
+1. **Install the app** - download `moto-buttons.apk` and install it (Android asks to allow Chrome to
+   install apps; if Play Protect warns, *More details* > *Install anyway*).
+2. **DMD2 support** (optional) - a link to THORK Racing's DMD Manage page; the app then guides the
+   Accessibility and *Allow restricted settings* steps.
+3. **Open Moto Buttons** - the app finds the controller, compares its firmware with the latest release
+   on the site and offers *Update*. When it says **All set**, *Remove this app* uninstalls it again
+   (DMD Manage stays).
+
+The controller needs firmware 2.2.0 or newer for Bluetooth updates; older ones are flashed once by USB.
+The app tells the boards apart (ESP32-C3 OLED, ESP32-C3, ESP32-C6, nRF52840) by the product ID in the
+controller's Bluetooth PnP ID and only offers that board's firmware. Its menu has **Beta firmware** to
+also offer newer beta releases.
+
+### Publishing releases
+The site is the `gh-pages` branch (Settings > Pages > Deploy from a branch > `gh-pages` / root). A tag
+on a board's branch builds, checks and publishes that board's firmware
+([release.yml](.github/workflows/release.yml)):
+
+| Tag | Publishes |
+|---|---|
+| `esp32c3-oled/v2.4.1` | production firmware 2.4.1 for the ESP32-C3 OLED board |
+| `esp32c3-oled/v2.4.2-beta.1` | beta firmware; the app offers it only with *Beta firmware* on |
+| `app/v1.4` | the Android app (`moto-buttons.apk`) |
+
+1. Set the version in [config.h](ArduinoCode/MotoButtons2/config.h) (`FIRMWARE_VERSION_TAG`, e.g.
+   `MBFWVER=2.4.1` or `MBFWVER=2.4.2-beta.1`), commit and push the branch.
+2. Tag and push: `git tag esp32c3-oled/v2.4.1` then `git push origin esp32c3-oled/v2.4.1`.
+3. The workflow builds with the branch's `release.json` (board, sketch, arduino-cli profile), refuses
+   a tag that does not match the version and board inside the `.bin`, adds it to `gh-pages`
+   (`firmware/<board>/<prod|beta>/`, `firmware/latest.json`) and creates a GitHub Release.
+
+Each board's branch needs its own `release.json` and `BOARD_ID_TAG` / `BOARD_PRODUCT_ID` in `config.h`
+(esp32c3-oled 0x4001, esp32c3 0x4002, esp32c6 0x4003, nrf52840 0x4004), plus the Bluetooth update
+service (`ota.cpp`). For `app/` tags the repository needs two secrets (Settings > Secrets and variables >
+Actions): `ANDROID_KEYSTORE_BASE64` (the release key, `base64 -w0 release.jks`) and
+`ANDROID_KEYSTORE_PASSWORD`. Locally, `site/tools/publish.py --site <gh-pages checkout> --firmware <bin>
+--channel prod|beta` does the same by hand. Keep the signing key (`%USERPROFILE%\.motobuttons\`) backed
+up: app updates must be signed with the same key.
+
+### Moto Buttons Tool (Windows)
+A single portable `MotoButtonsTool.exe` (no install; Windows 10/11) that sets up a phone over USB and
+updates the controller's firmware. Build it with `Apps\Windows\build.ps1` after building the Android
+app (`Apps\Android`: `gradlew assembleDebug`). On first use it downloads Google's platform tools (adb)
+into a `MotoButtonsTool_data` folder next to the exe.
+
+Connect the phone by USB with USB debugging on, allow the PC, then go through the steps:
+1. **Check phone** - finds the phone and shows what is installed.
+2. **Install DMD support** - downloads DMD Manage from THORK Racing, installs it and turns on its
+   accessibility service and background use. No taps on the phone needed.
+3. **Pair the controller** - opens Bluetooth settings on the phone: tap *Scan*, tap `DMD-Remote3`, tap
+   *Pair*. Press the button again to check. Unpair first if the controller was paired before a firmware
+   that added a Bluetooth service.
+4. **Install Moto Buttons app** - the phone app that sends firmware to the controller.
+5. **Controller firmware** - choose the firmware `.bin` (the app image `MotoButtons2.ino.bin`, not the
+   merged one). It is copied to the phone and the Moto Buttons app opens: check the controller is
+   selected, tap *Update firmware* and confirm. About 90 s; the controller restarts and reconnects.
+
+The phone app can also update from any `.bin` saved on the phone (*Choose firmware file*). It lists
+only paired controllers that have the Moto Buttons update service, with their firmware version. The
+first firmware with the update service (2.2.0) has to be flashed by USB once, and every phone must
+then forget and re-pair the controller.
 
 ### Button chords
 | Buttons | Hold | Action |
@@ -183,7 +252,9 @@ The diagram below is still the original nRF52840 drawing, hand-annotated for the
 See the [programming instructions](Programming/README.md). The sketch is split into units; every
 tunable (pins, timings, key codes, Bluetooth name, debug switches) is in
 [config.h](ArduinoCode/MotoButtons2/config.h), and the key tables are in
-[keymap.cpp](ArduinoCode/MotoButtons2/keymap.cpp).
+[keymap.cpp](ArduinoCode/MotoButtons2/keymap.cpp). Firmware updates over Bluetooth are in
+[ota.cpp](ArduinoCode/MotoButtons2/ota.cpp); the phone app is in [Apps/Android](Apps/Android) and the
+Windows tool in [Apps/Windows](Apps/Windows).
 
 ## References
 - https://github.com/sigmdel/mini_esp32c3_oled_sketches

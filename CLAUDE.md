@@ -22,6 +22,7 @@ as tabs:
 | `chords.h/.cpp` | button combinations: mode, display, restart, factory reset |
 | `oled.h/.cpp` | display state machine, rendering, dim/blank |
 | `ble_hid.h/.cpp` | NimBLE HID device, bonded-phone whitelist |
+| `ota.h/.cpp` | firmware update over BLE: custom GATT service, `Update` library, restart |
 | `settings.h/.cpp` | Preferences record with a schema version |
 | `debug.h` | `debugPrintf()` / `debugPrintln()`, compiled out when `DEBUG` is false |
 | `sketch.yaml` | arduino-cli profile pinning core and library versions |
@@ -29,7 +30,10 @@ as tabs:
 Elsewhere: `.github/workflows/compile.yml` compiles on every push, `Docs/` holds reference notes
 (read them before touching input handling or DMD2 behaviour), `Programming/README.md` is the
 flashing guide, `Wiring/` still shows the original nRF52840 drawing hand-annotated for C3 pins,
-`3D/` and `Design/` are case and photos.
+`3D/` and `Design/` are case and photos. `Apps/Android` is the phone updater app (Java, no AndroidX,
+Gradle 8.9 / AGP 8.6.1, build with `JAVA_HOME` = Android Studio's `jbr` and `gradlew assembleDebug`);
+`Apps/Windows` is the portable setup tool (C# 5 WinForms, built by `build.ps1` with the .NET Framework
+4.8 `csc.exe`, the Android APK embedded as a resource).
 
 ## Building
 
@@ -136,6 +140,36 @@ absolute `millis()` deadline.
 uses the accept list for `BLE_WHITELIST_OPEN_AFTER_MS` after boot and after each disconnect, then
 opens. Untested on hardware: if reconnects always take 90 s, the controller is not resolving the
 phone's private address and the switch should go to false.
+
+**Phone-only update path.** GitHub Pages serves the `gh-pages` branch: `index.html` (M3 setup wizard,
+template in `site/`), `moto-buttons.apk`, `firmware/<board>/<prod|beta>/MotoButtons2-<ver>.bin` and
+`firmware/latest.json` = `{"boards":{"<board>":{"prod":{version,file,size,md5},"beta":{...}}}}`.
+Tags drive `.github/workflows/release.yml`: `<board>/v<ver>` (prod), `<board>/v<ver>-beta.N` (beta),
+`app/v<ver>`; it builds with the branch's `release.json`, checks the tag against the `MBFWVER=` and
+`MBBOARD=` tags in the `.bin` and commits to `gh-pages` via `site/tools/publish.py`. The board is
+reported to the app as the Bluetooth PnP ID product (`BOARD_PRODUCT_ID`, no GATT change) and the
+`BOARD_ID_TAG` string is kept in the image by a run-time reference in `ota.cpp` (the linker drops an
+unused constant). Version order: 2.4.1-beta.2 < 2.4.1. The app (`RemoteFirmware.java`) reads
+`BuildConfig.SITE_URL + firmware/latest.json`; debug builds use `http://localhost:8000/` (serve
+`site/` and `adb reverse tcp:8000 tcp:8000`), release builds the Pages URL. Release signing key and
+`keystore.properties` live in `%USERPROFILE%\.motobuttons\` (never in the repo). The app checks DMD
+Manage (`DmdSupport.java`, needs the `<queries>` entry), opens from the page via `motobuttons://open`
+(intent URL), shows "All set" after an update and can uninstall itself (`ACTION_DELETE`). It declares
+`configChanges` so the controller's keyboard reconnecting does not recreate the screen, and handles
+adb commands only once per intent. Web and Windows installs must use the same (release) signature.
+
+**Firmware update over BLE** (`ota.cpp`, hardware-tested 2.2.0 <-> 2.2.1 on a Galaxy S21). Service
+`6a2a0000-7a4e-4b5c-9d3f-2f6d6f746f62`, control `...0001` (write + notify: START size+MD5, FINISH,
+ABORT; notify event/status/value) and data `...0002` (writes with response), both encrypted-only.
+The image goes to the idle slot of the default OTA partition table; `Update.end()` checks the MD5 and
+the controller restarts after `OTA_RESTART_DELAY_MS`. The Firmware Revision characteristic (0x2A26) in
+the Device Information service carries `FIRMWARE_VERSION`; the app uses the update service to tell our
+controllers apart. The phone app mirrors the UUIDs in `Protocol.java`. Adding or changing a GATT
+service means every phone must forget and re-pair (Android caches the service list). The Windows tool
+pushes the image to `/sdcard/Android/data/com.bush.motobuttons/files/firmware.bin`, which the app
+loads on start. It configures DMD Manage with `adb shell settings put secure
+enabled_accessibility_services`, `cmd appops set ... ACCESS_RESTRICTED_SETTINGS allow` and the
+`deviceidle` whitelist; it downloads DMD Manage and platform-tools at run time (never commit them).
 
 **Watchdog.** The IDF task watchdog is reconfigured to `WATCHDOG_TIMEOUT_MS` (10 s) and the loop
 task subscribed. The longest blocking call is the 2 s factory-reset message; keep it that way.

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Moto Buttons</string>
+    <string name="subtitle">Controller update</string>
+    <string name="controller">Controller</string>
+    <string name="search">Search again</string>
+    <string name="firmware_update">Firmware</string>
+    <string name="update_firmware">Update firmware</string>
+    <string name="dmd_support">DMD2 support</string>
+    <string name="use_file">Use a .bin file</string>
+    <string name="beta_firmware">Beta firmware</string>
+    <string name="all_set">All set</string>
+    <string name="close">Close</string>
+    <string name="remove_app">Remove this app</string>
+    <string name="remove_hint">The controller keeps working without this app. Open the setup page again for the next update.</string>
+</resources>

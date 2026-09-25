@@ -1,0 +1,115 @@
+# Releases, driven by tags on any branch:
+#   <board>/v<version>          production firmware, e.g. esp32c3-oled/v2.4.0
+#   <board>/v<version>-beta.N   beta firmware,       e.g. esp32c3-oled/v2.4.1-beta.1
+#   app/v<version>              Android app,         e.g. app/v1.3
+# Firmware is built from the tagged commit using that branch's release.json, checked
+# against the tag, added to the gh-pages branch (the GitHub Pages site) and attached to
+# a GitHub Release. The app needs the secrets ANDROID_KEYSTORE_BASE64 and
+# ANDROID_KEYSTORE_PASSWORD (see README, Publishing releases).
+name: Release
+
+on:
+  push:
+    tags: ['*/v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gh-pages
+  cancel-in-progress: false
+
+jobs:
+  firmware:
+    if: ${{ !startsWith(github.ref_name, 'app/') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read tag and release.json
+        id: meta
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          board="${tag%%/v*}"
+          version="${tag#*/v}"
+          channel=prod
+          case "$version" in *-beta*) channel=beta ;; esac
+          cfg_board=$(jq -r .board release.json)
+          if [ "$board" != "$cfg_board" ]; then
+            echo "::error::Tag board '$board' does not match release.json board '$cfg_board' on this branch"; exit 1
+          fi
+          echo "board=$board" >> "$GITHUB_OUTPUT"
+          echo "version=${version%%-beta*}" >> "$GITHUB_OUTPUT"
+          echo "fullversion=$version" >> "$GITHUB_OUTPUT"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "sketch=$(jq -r .sketch release.json)" >> "$GITHUB_OUTPUT"
+          echo "profile=$(jq -r .profile release.json)" >> "$GITHUB_OUTPUT"
+
+      - uses: arduino/setup-arduino-cli@v2
+
+      - name: Build firmware
+        run: |
+          arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli compile --profile "${{ steps.meta.outputs.profile }}" --output-dir out "${{ steps.meta.outputs.sketch }}"
+          ls -l out
+          cp out/*.ino.bin "MotoButtons2-${{ steps.meta.outputs.board }}-${{ steps.meta.outputs.fullversion }}.bin"
+
+      - name: Add to the site (gh-pages)
+        run: |
+          git fetch origin gh-pages
+          git worktree add pages origin/gh-pages
+          python3 site/tools/publish.py --site pages --template site \
+            --firmware "MotoButtons2-${{ steps.meta.outputs.board }}-${{ steps.meta.outputs.fullversion }}.bin" \
+            --channel "${{ steps.meta.outputs.channel }}" \
+            --expect-board "${{ steps.meta.outputs.board }}" --expect-version "${{ steps.meta.outputs.fullversion }}"
+          cd pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Publish ${GITHUB_REF_NAME}"
+          git push origin HEAD:gh-pages
+
+      - name: GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: ${{ steps.meta.outputs.channel == 'beta' }}
+          files: MotoButtons2-*.bin
+
+  app:
+    if: ${{ startsWith(github.ref_name, 'app/') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Signing key from secrets
+        run: |
+          mkdir -p ~/.motobuttons
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > ~/.motobuttons/release.jks
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=motobuttons\nkeyPassword=%s\n' \
+            "$HOME/.motobuttons/release.jks" "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+            > ~/.motobuttons/keystore.properties
+
+      - name: Build app
+        working-directory: Apps/Android
+        run: chmod +x gradlew && ./gradlew assembleRelease
+
+      - name: Add to the site (gh-pages)
+        run: |
+          git fetch origin gh-pages
+          git worktree add pages origin/gh-pages
+          python3 site/tools/publish.py --site pages --template site --app Apps/Android/app/build/outputs/apk/release/app-release.apk
+          cd pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Publish ${GITHUB_REF_NAME}"
+          git push origin HEAD:gh-pages
+
+      - name: GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Apps/Android/app/build/outputs/apk/release/app-release.apk

@@ -17,8 +17,18 @@
 
 #include <Arduino.h>
 
-// Shown on the boot screen and printed to serial at start-up.
-constexpr char FIRMWARE_VERSION[] = "2.1.0";
+// Shown on the boot screen and printed to serial at start-up. The tag
+// prefix lets the update tools read the version straight from the .bin.
+constexpr char FIRMWARE_VERSION_TAG[] = "MBFWVER=2.4.0";
+constexpr const char *FIRMWARE_VERSION = FIRMWARE_VERSION_TAG + 8;
+
+/* Which board this build is for, so the update app picks the right .bin.
+ * The phone reads it as the product ID of the Bluetooth PnP ID; the tag
+ * marks the .bin itself. One pair per board:
+ *   esp32c3-oled 0x4001   esp32c3 0x4002   esp32c6 0x4003   nrf52840 0x4004
+ */
+constexpr char BOARD_ID_TAG[] = "MBBOARD=esp32c3-oled";
+constexpr uint16_t BOARD_PRODUCT_ID = 0x4001;
 
 /*------------------------------ DEBUG -------------------------------*/
 // General serial logging at 115200 baud. Output is dropped while no USB
@@ -187,6 +197,15 @@ constexpr uint32_t BLE_WHITELIST_OPEN_AFTER_MS = 90000;
 
 // Keyboard report: six simultaneous keys.
 constexpr uint8_t KEY_REPORT_SIZE = 6;
+
+/* Firmware update over Bluetooth (ota.cpp). A larger MTU lets the phone
+ * send up to MTU - 3 image bytes per write. After a verified image the
+ * controller waits a moment so the phone can read the result, then
+ * restarts into the new firmware.
+ */
+constexpr uint16_t BLE_MTU = 247;
+constexpr uint16_t OTA_RESTART_DELAY_MS = 1500;
+constexpr uint16_t OTA_SCREEN_MS = 3000;
 
 /*----------------------------- WATCHDOG -----------------------------*/
 // The main loop must come round at least this often or the chip resets.

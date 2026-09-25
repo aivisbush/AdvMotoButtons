@@ -1,5 +1,6 @@
 #include "ble_hid.h"
 #include "keymap.h"
+#include "ota.h"
 #include "debug.h"
 #include <NimBLEDevice.h>
 #include <NimBLEHIDDevice.h>
@@ -145,6 +146,7 @@ class MotoButtonsServerCallbacks : public NimBLEServerCallbacks
   void onDisconnect(NimBLEServer *server, NimBLEConnInfo &connInfo, int reason) override
   {
     connected = false;
+    otaOnDisconnect();
     startAdvertising(whitelistWanted());
   }
 
@@ -173,6 +175,7 @@ void bleBegin()
   NimBLEDevice::init(BLE_DEVICE_NAME);
   ble_svc_gap_device_appearance_set(BLE_APPEARANCE);
   NimBLEDevice::setPower(BLE_TX_POWER_DBM);
+  NimBLEDevice::setMTU(BLE_MTU);
   NimBLEDevice::setSecurityAuth(true, false, true); // bonding, no MITM, secure connections
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
 
@@ -181,12 +184,18 @@ void bleBegin()
 
   hidDevice = new NimBLEHIDDevice(bleServer);
   hidDevice->setManufacturer(BLE_MANUFACTURER);
-  hidDevice->setPnp(0x02, 0x303A, 0x4001, 0x0200); // USB-IF source, Espressif VID
+  hidDevice->setPnp(0x02, 0x303A, BOARD_PRODUCT_ID, 0x0200); // USB-IF source, Espressif VID; product = board
+  debugPrintf("Board %s\n", BOARD_ID_TAG + 8);
   hidDevice->setHidInfo(0x00, HID_INFO_REMOTE_WAKE | HID_INFO_NORMALLY_CONNECTABLE);
   hidDevice->setReportMap(reportDescriptor, buildReportDescriptor());
   keyboardInput = hidDevice->getInputReport(KEYBOARD_REPORT_ID);
   consumerInput = hidDevice->getInputReport(CONSUMER_REPORT_ID);
   hidDevice->setBatteryLevel(100);
+  // Firmware Revision String, read by the update app.
+  hidDevice->getDeviceInfoService()
+    ->createCharacteristic((uint16_t)0x2A26, NIMBLE_PROPERTY::READ)
+    ->setValue(std::string(FIRMWARE_VERSION));
+  otaCreateService(bleServer);
 
   NimBLEAdvertising *advertising = NimBLEDevice::getAdvertising();
   advertising->setAppearance(BLE_APPEARANCE);

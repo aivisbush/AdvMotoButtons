@@ -38,3 +38,17 @@ reference/
 
 # DMD Manage is THORK Racing's app: download it, do not commit it
 *.apk
+
+# Android app build output
+Apps/Android/.gradle/
+Apps/Android/build/
+Apps/Android/app/build/
+Apps/Android/local.properties
+
+# Windows tool build output and its downloads (adb, DMD Manage)
+Apps/Windows/dist/
+MotoButtonsTool_data/
+
+# Site artifacts live on the gh-pages branch
+site/firmware/
+site/moto-buttons.apk

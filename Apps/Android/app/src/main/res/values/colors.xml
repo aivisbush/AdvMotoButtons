@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material 3 roles from the logo blue (#1E3A5F); Android 12+ uses the wallpaper colours instead. -->
+<resources>
+    <color name="md_primary">#FF3A608F</color>
+    <color name="md_on_primary">#FFFFFFFF</color>
+    <color name="md_primary_container">#FFD3E4FF</color>
+    <color name="md_on_primary_container">#FF001C38</color>
+    <color name="md_secondary">#FF545F71</color>
+    <color name="md_on_secondary">#FFFFFFFF</color>
+    <color name="md_secondary_container">#FFD8E3F8</color>
+    <color name="md_on_secondary_container">#FF111C2B</color>
+    <color name="md_tertiary">#FF9A4521</color>
+    <color name="md_on_tertiary">#FFFFFFFF</color>
+    <color name="md_tertiary_container">#FFFFDBCF</color>
+    <color name="md_on_tertiary_container">#FF380D00</color>
+    <color name="md_error">#FFBA1A1A</color>
+    <color name="md_surface">#FFF8F9FF</color>
+    <color name="md_on_surface">#FF191C20</color>
+    <color name="md_on_surface_variant">#FF43474E</color>
+    <color name="md_outline">#FF73777F</color>
+    <color name="md_outline_variant">#FFC3C7CF</color>
+    <color name="md_surface_container">#FFECEEF4</color>
+    <color name="md_surface_container_high">#FFE6E8EE</color>
+</resources>
