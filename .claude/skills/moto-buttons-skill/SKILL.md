@@ -143,6 +143,21 @@ description: Everything learned about the MotoButtons2 BLE controller (Seeed XIA
   one press/release pair.
 - Stray key on mode change: one button lands 4-60 ms before the other, so B+C types F7 / `-` / `c` before the combo forms
   (known, fix parked as 80 ms grace).
+- Locus mode (commit 294dcc4, orange): needs Locus "Use hardware buttons". Locus zooms in only on KEYCODE_PLUS or volume
+  up (Shift+`=` and `=` ignored; no HID keyboard usage gives KEYCODE_PLUS), so A sends consumer volume up
+  (`KeyMap.consumerMask`). `C` toggles follow-GPS; the map moves on the next GPS fix (instant with a real fix). C held
+  for the press is the version the user approved.
+- On-screen keyboard (commit 05f39ec, hardware-verified on Galaxy S21, Android 15): two independent checks hide it.
+  1) Android: a device whose key bitmask has KEY_Q is ALPHAKEY -> config `qwerty`. Fixed by our own `BLEHidGeneric`
+  report map whose keyboard array lists only the modes' keys (report value = index + 1, built from `MODES[]`).
+  2) Samsung: `SamsungIMMSHWKeyboard.keyboardState` bit 2 is set when the Bluetooth HID broadcast has
+  `extra.isKeyboard`, which Samsung's Bluetooth stack derives from the peripheral minor class 0x540/0x5C0, i.e. from
+  the BLE appearance (961 HID keyboard). Fixed with `BLE_APPEARANCE_GENERIC_HID` (960) in advertising and GAP.
+  The class is cached at pairing: forget + re-pair after changing it. Diagnose with `dumpsys bluetooth_manager`
+  (class column), `dumpsys input` (Classes), logcat `isAccessoryKeyboard` / `virtual keyboard option is false`.
+- Phone tests from the PC: Galaxy S21 Ultra on adb; `input keyboard keyevent N` tests app key handling; Samsung logs
+  `interceptKeyTq` with wall time per key; `screenrecord --bugreport` stamps frames; framework jars decompile with
+  build-tools `dexdump -d`. In Git Bash set `MSYS_NO_PATHCONV=1` for device paths.
 
 ## 8. Parked: Bluetooth firmware update path (user wants it LATER; nothing installed or in the repo)
 1. Zip build hook, verified with arduino-cli: `platform.local.txt` next to platform.txt in the Seeed package dir:
