@@ -1,6 +1,6 @@
 /*********************************************************************
 License: GNU GENERAL PUBLIC LICENSE; Version 3, 29 June 2007
-Version: 2.1 (DMD2, OsmAnd, Media modes)
+Version: 2.1 (DMD2, OsmAnd, Locus, Media modes)
 Device: Seeed XIAO nRF52840 (MotoButtons 2)
 *********************************************************************/
 #include <bluefruit.h>
@@ -17,7 +17,7 @@ using namespace Adafruit_LittleFS_Namespace;
 #define DEBUG false
 
 /*---- 1. BLE ----*/
-const char BLE_DEVICE_NAME[] = "Bush Moto BT14";
+const char BLE_DEVICE_NAME[] = "Sandis Moto BT";
 const char BLE_DEVICE_MODEL[] = "Btns v2.1";
 const char BLE_MANUFACTURER[] = "Bush";
 #define BLE_TX_POWER 8           // dBm
@@ -58,6 +58,7 @@ const uint8_t COLOR_RGB[N_COLORS][3] = {
 // modes: steady while connected, one long blink on mode change
 #define DMD2_MODE_COLOR Blue
 #define OSMAND_MODE_COLOR Green
+#define LOCUS_MODE_COLOR Orange
 #define MEDIA_MODE_COLOR Magenta
 
 /*---- 4. MODES AND KEY MAPS ----
@@ -71,28 +72,34 @@ enum ButtonId { BTN_UP = 0, BTN_DOWN, BTN_LEFT, BTN_RIGHT, BTN_CENTER, BTN_A, BT
 #define DEFAULT_MODE DMD2
 #define CONSUMER_KEY_HOLD_MS 50 // media key press length
 
-typedef enum { DMD2 = 1, OsmAnd = 2, MEDIA = 3 } Mode; // stored in settings file, keep values stable
+typedef enum { DMD2 = 1, OsmAnd = 2, MEDIA = 3, Locus = 4 } Mode; // stored in settings file, keep values stable
 // Media: volume/brightness keep stepping while held
 // OsmAnd: fast map scroll by tapping the arrow (45/40 ms tuned on Android, not tested on iPhone); zoom A/B repeats while held
+// Locus: needs "Use hardware buttons" in Locus; zooms in only on volume up; C toggles follow GPS
 struct Repeat { uint8_t mask; uint16_t delayMs, intervalMs, releaseMs; }; // buttons that auto-repeat while held
 #define N_REPEAT 2
-struct KeyMap { uint16_t key[N_BUTTONS]; bool consumer; Repeat rep[N_REPEAT]; };
+// consumerMask: buttons sending a media key in a keyboard mode
+struct KeyMap { uint16_t key[N_BUTTONS]; bool consumer; uint8_t consumerMask; Repeat rep[N_REPEAT]; };
 struct ModeDef { Mode id; Color color; KeyMap keys; };
 #define DIRECTIONS (BTN_BIT(BTN_UP) | BTN_BIT(BTN_DOWN) | BTN_BIT(BTN_LEFT) | BTN_BIT(BTN_RIGHT))
 
 const ModeDef MODES[] = {
     {DMD2, DMD2_MODE_COLOR,
      {{HID_KEY_ARROW_UP, HID_KEY_ARROW_DOWN, HID_KEY_ARROW_LEFT, HID_KEY_ARROW_RIGHT,
-       HID_KEY_F8, HID_KEY_F6, HID_KEY_F7, HID_KEY_ENTER}, false, {{0, 0, 0, 0}, {0, 0, 0, 0}}}},
+       HID_KEY_F8, HID_KEY_F6, HID_KEY_F7, HID_KEY_ENTER}, false, 0, {{0, 0, 0, 0}, {0, 0, 0, 0}}}},
     {OsmAnd, OSMAND_MODE_COLOR,
      {{HID_KEY_ARROW_UP, HID_KEY_ARROW_DOWN, HID_KEY_ARROW_LEFT, HID_KEY_ARROW_RIGHT,
-       HID_KEY_NONE, HID_KEY_EQUAL, HID_KEY_MINUS, HID_KEY_C}, false,
+       HID_KEY_NONE, HID_KEY_EQUAL, HID_KEY_MINUS, HID_KEY_C}, false, 0,
       {{DIRECTIONS, 0, 45, 40}, {BTN_BIT(BTN_A) | BTN_BIT(BTN_B), 150, 150, 40}}}},
+    {Locus, LOCUS_MODE_COLOR,
+     {{HID_KEY_ARROW_UP, HID_KEY_ARROW_DOWN, HID_KEY_ARROW_LEFT, HID_KEY_ARROW_RIGHT,
+       HID_KEY_NONE, HID_USAGE_CONSUMER_VOLUME_INCREMENT, HID_KEY_MINUS, HID_KEY_C}, false, BTN_BIT(BTN_A),
+      {{BTN_BIT(BTN_A), 250, 250, 0}, {BTN_BIT(BTN_B), 250, 250, 40}}}},
     {MEDIA, MEDIA_MODE_COLOR,
      {{HID_USAGE_CONSUMER_VOLUME_INCREMENT, HID_USAGE_CONSUMER_VOLUME_DECREMENT,
        HID_USAGE_CONSUMER_SCAN_PREVIOUS, HID_USAGE_CONSUMER_SCAN_NEXT,
        HID_USAGE_CONSUMER_MUTE, HID_USAGE_CONSUMER_PLAY_PAUSE,
-       HID_USAGE_CONSUMER_BRIGHTNESS_INCREMENT, HID_USAGE_CONSUMER_BRIGHTNESS_DECREMENT}, true,
+       HID_USAGE_CONSUMER_BRIGHTNESS_INCREMENT, HID_USAGE_CONSUMER_BRIGHTNESS_DECREMENT}, true, 0,
       {{BTN_BIT(BTN_UP) | BTN_BIT(BTN_DOWN) | BTN_BIT(BTN_B) | BTN_BIT(BTN_C), 400, 150, 0}, {0, 0, 0, 0}}}},
 };
 #define N_MODES ((uint8_t)(sizeof(MODES) / sizeof(MODES[0])))
@@ -454,7 +461,7 @@ bool buildKeyReport(const KeyMap *map, uint8_t suppressMask) { // returns true i
   auto pushKey = [&](uint16_t key) { if (key != HID_KEY_NONE && n < N_KEY_REPORT) keyReport[n++] = (uint8_t)key; };
 
   for (uint8_t id = 0; id < N_BUTTONS; id++) {
-    if (id == BTN_CENTER) continue;
+    if (id == BTN_CENTER || (map->consumerMask & BTN_BIT(id))) continue;
     buttons[id].flipped = false;
     if (!(suppressMask & BTN_BIT(id)) && keyActive(id)) pushKey(map->key[id]);
   }
@@ -485,26 +492,26 @@ bool sendConsumerKey(uint16_t usage) {
   return true;
 }
 
-// one consumer key at a time
-void handleConsumerKeys(const KeyMap *map) {
+// one consumer key at a time; mask = buttons handled here
+void handleConsumerKeys(const KeyMap *map, uint8_t mask) {
   unsigned long now = millis();
   for (uint8_t id = 0; id < N_BUTTONS; id++) {
-    if (id == BTN_CENTER || !buttons[id].flipped) continue;
+    if (id == BTN_CENTER || !(mask & BTN_BIT(id)) || !buttons[id].flipped) continue;
     if (keyActive(id)) {
       if (!sendConsumerKey(map->key[id])) return;
-      for (uint8_t s = 0; s < N_REPEAT; s++) repState[s].lastTime = now;
+      for (uint8_t s = 0; s < N_REPEAT; s++) if (map->rep[s].mask & mask) repState[s].lastTime = now;
       buttons[id].flipped = false;
       return;
     }
     buttons[id].flipped = false;
   }
-  if (centerTapPending) {
+  if (centerTapPending && (mask & BTN_BIT(BTN_CENTER))) {
     if (!sendConsumerKey(map->key[BTN_CENTER])) return;
     centerTapPending = false;
     return;
   }
   for (uint8_t s = 0; s < N_REPEAT; s++) {
-    uint8_t rep = repeatableMask(&map->rep[s], now);
+    uint8_t rep = repeatableMask(&map->rep[s], now) & mask;
     if (!rep || now - repState[s].lastTime < map->rep[s].intervalMs) continue;
     for (uint8_t id = 0; id < N_BUTTONS; id++)
       if (rep & BTN_BIT(id)) { if (sendConsumerKey(map->key[id])) repState[s].lastTime = now; return; }
@@ -519,9 +526,10 @@ void handleKeyReports() {
     consumerReleasePending = false;
   if (map->consumer) {
     forceKeyReport = false;
-    if (!consumerReleasePending) handleConsumerKeys(map);
+    if (!consumerReleasePending) handleConsumerKeys(map, 0xFF);
     return;
   }
+  if (map->consumerMask && !consumerReleasePending) handleConsumerKeys(map, map->consumerMask);
 
   // each repeat group cycles key-down (interval - release) / key-up (release); suppress = keys currently in key-up
   bool phaseChanged = false;
@@ -531,6 +539,7 @@ void handleKeyReports() {
 #if DEBUG
     if (tune[s].intervalMs) { rp.intervalMs = tune[s].intervalMs; rp.releaseMs = tune[s].releaseMs; }
 #endif
+    if (rp.mask & map->consumerMask) continue;
     RepeatState &st = repState[s];
     uint8_t rep = repeatableMask(&rp, now);
     if (!rep) { st.releaseSent = false; st.lastTime = now; continue; }
@@ -573,7 +582,7 @@ bool readSettings() { // returns true on error (defaults applied)
   char *modeTok = strtok(buffer, ","), *orientTok = strtok(NULL, ","), *brightTok = strtok(NULL, ","), *extraTok = strtok(NULL, ",");
   uint8_t mode = 0, orient = 0, bright = 0;
   if (!modeTok || !orientTok || !brightTok || extraTok ||
-      !parseUint8Token(modeTok, 1, 3, &mode) || !parseUint8Token(orientTok, 0, 3, &orient) || !parseUint8Token(brightTok, 0, 255, &bright)) {
+      !parseUint8Token(modeTok, 1, 4, &mode) || !parseUint8Token(orientTok, 0, 3, &orient) || !parseUint8Token(brightTok, 0, 255, &bright)) {
     DEBUG_PRINTLN("Settings invalid, restoring defaults.");
     applyDefaultSettings();
     return true;

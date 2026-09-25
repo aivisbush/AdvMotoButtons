@@ -47,6 +47,13 @@ Standard button functionality by mode:
 - Joystick Up, Down, Left, Right - Arrow keys; while held, the key is tapped about 22 times per second so the map scrolls fast (OsmAnd jumps 200 px per tap; the rate is set in the mode table in the code)
 - Joystick Middle press - Unbound
 
+`Locus` mode (Locus Map; enable Settings -> Controlling -> Use hardware buttons):
+- Button A short press or hold - Volume up / zoom in (repeats while held; Locus zooms in on `+` from a keyboard only as volume up)
+- Button B short press or hold - `-` / zoom out (repeats while held)
+- Button C short press - `C` / follow my position on or off; the map moves on the next GPS fix
+- Joystick Up, Down, Left, Right - Arrow keys, move the map
+- Joystick Middle press - Unbound
+
 `Media` mode:
 - Button A short press - Play / Pause
 - Button B short press or hold - Screen brightness up (repeats while held)
@@ -60,7 +67,7 @@ Standard button functionality by mode:
 Special functions:
 - Hold one joystick direction (up, down, left or right) while powering on the device to select the orientation. The direction you hold becomes "up" (the three buttons are then on the opposite side). The LED flashes red 1 to 4 times to confirm and the orientation is saved
 - Button A+B long press - LED brightness changes; hold it until you are satisfied and release. The dimmest step turns the LED completely off and pauses there for 1.5 s so it is easy to release, then the next step wraps back to full brightness
-- Button B+C long press - Mode change: DMD2 (blue) -> OsmAnd (green) -> Media (magenta)
+- Button B+C long press - Mode change: DMD2 (blue) -> OsmAnd (green) -> Locus (orange) -> Media (magenta)
 - Button A+B+C long press (5 secs) - Clear all Bluetooth bonds and reset settings to defaults (LED flashes red 4 times). This is the workaround to get BT auto-connect working again: afterwards "forget" the device on your phone/tablet and pair it again
 
 Programming: the Arduino IDE resets the device into DFU mode automatically when uploading. If that fails, double tap the small reset button next to the USB-C connector (see [Programming](Programming/README.md)).
