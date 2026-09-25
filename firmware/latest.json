@@ -1,0 +1,12 @@
+{
+  "boards": {
+    "esp32c3-oled": {
+      "prod": {
+        "version": "2.4.0",
+        "file": "esp32c3-oled/prod/MotoButtons2-2.4.0.bin",
+        "size": 655088,
+        "md5": "2ea207b1de20906e3a28203983966898"
+      }
+    }
+  }
+}
