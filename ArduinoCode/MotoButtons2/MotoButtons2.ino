@@ -20,9 +20,10 @@ using namespace Adafruit_LittleFS_Namespace;
 const char BLE_DEVICE_NAME[] = "Sandis Moto BT";
 const char BLE_DEVICE_MODEL[] = "Btns v2.1";
 const char BLE_MANUFACTURER[] = "Bush";
+#define BLE_APPEARANCE BLE_APPEARANCE_GENERIC_HID // not HID keyboard: Android would hide the on-screen keyboard
 #define BLE_TX_POWER 8           // dBm
 #define BLE_CONN_INTERVAL_MIN 9  // x 1.25 ms
-#define BLE_CONN_INTERVAL_MAX 16 // x 1.25 ms
+#define BLE_CONN_INTERVAL_MAX 12 // x 1.25 ms
 #define BLE_HVN_QUEUE_SIZE 4     // notification queue; default 1 stalls key-down + key-up pairs
 
 /*---- 2. WIRING ----*/
@@ -142,8 +143,16 @@ const uint8_t ORIENTATION_PINS[4][4] = {
 
 File file(InternalFS);
 BLEDis bledis;
-BLEHidAdafruit blehid;
+BLEHidGeneric blehid(2); // input reports: keyboard, consumer
+enum { REPORT_ID_KEYBOARD = 1, REPORT_ID_CONSUMER };
 bool BLE_connected = false;
+
+/*--------------------------- HID descriptor -------------------------*/
+// Keyboard declares only the keys the modes use: no letter Q, so Android keeps the on-screen keyboard
+#define MAX_KBD_KEYS 16
+uint8_t kbdKeys[MAX_KBD_KEYS], nKbdKeys = 0; // report value = index + 1
+uint8_t hidReportMap[96];
+uint16_t hidReportMapLen = 0;
 volatile bool bleConnectEvent = false, bleDisconnectEvent = false;
 
 Color LEDState = Off;
@@ -212,6 +221,42 @@ Mode getNextMode(Mode mode) {
   for (uint8_t i = 0; i < N_MODES; i++) if (MODES[i].id == mode) return MODES[(i + 1) % N_MODES].id;
   return MODES[0].id;
 }
+
+/*--------------------------- HID reports ----------------------------*/
+uint8_t kbdKeyIndex(uint8_t key) {
+  for (uint8_t i = 0; i < nKbdKeys; i++) if (kbdKeys[i] == key) return i + 1;
+  return 0;
+}
+
+// keyboard: array of the keyboard keys of all modes; consumer: same as Bluefruit's
+void buildReportMap() {
+  for (uint8_t m = 0; m < N_MODES; m++) {
+    const KeyMap &km = MODES[m].keys;
+    if (km.consumer) continue;
+    for (uint8_t id = 0; id < N_BUTTONS; id++) {
+      uint16_t k = km.key[id];
+      if (k != HID_KEY_NONE && !(km.consumerMask & BTN_BIT(id)) && !kbdKeyIndex(k) && nKbdKeys < MAX_KBD_KEYS) kbdKeys[nKbdKeys++] = (uint8_t)k;
+    }
+  }
+  const uint8_t kbdHead[] = {0x05, 0x01, 0x09, 0x06, 0xA1, 0x01, 0x85, REPORT_ID_KEYBOARD, 0x05, 0x07,
+                             0x15, 0x01, 0x25, nKbdKeys, 0x75, 0x08, 0x95, N_KEY_REPORT};
+  const uint8_t kbdTail[] = {0x81, 0x00, 0xC0};
+  const uint8_t consumer[] = {TUD_HID_REPORT_DESC_CONSUMER(HID_REPORT_ID(REPORT_ID_CONSUMER))};
+  uint16_t n = 0;
+  memcpy(hidReportMap, kbdHead, sizeof(kbdHead)); n += sizeof(kbdHead);
+  for (uint8_t i = 0; i < nKbdKeys; i++) { hidReportMap[n++] = 0x09; hidReportMap[n++] = kbdKeys[i]; }
+  memcpy(hidReportMap + n, kbdTail, sizeof(kbdTail)); n += sizeof(kbdTail);
+  memcpy(hidReportMap + n, consumer, sizeof(consumer)); n += sizeof(consumer);
+  hidReportMapLen = n;
+}
+
+bool sendKeys(const uint8_t keys[N_KEY_REPORT]) {
+  uint8_t report[N_KEY_REPORT];
+  for (uint8_t i = 0; i < N_KEY_REPORT; i++) report[i] = kbdKeyIndex(keys[i]);
+  return blehid.inputReport(REPORT_ID_KEYBOARD, report, N_KEY_REPORT);
+}
+
+bool sendConsumer(uint16_t usage) { return blehid.inputReport(REPORT_ID_CONSUMER, &usage, sizeof(usage)); }
 
 /*------------------------------ LED ---------------------------------*/
 void setRGBColor(Color color) {
@@ -330,7 +375,7 @@ void resetKeyReportState() {
 
 void releaseAllKeys() {
   uint8_t none[N_KEY_REPORT] = {0};
-  blehid.keyboardReport(0, none);
+  sendKeys(none);
 }
 
 void applyDefaultSettings() {
@@ -474,7 +519,7 @@ bool buildKeyReport(const KeyMap *map, uint8_t suppressMask) { // returns true i
 
 bool sendKeyboardReport(const KeyMap *map, uint8_t suppressMask) { // failed sends are retried next loop
   bool includesCenter = buildKeyReport(map, suppressMask);
-  if (!blehid.keyboardReport(0, keyReport)) {
+  if (!sendKeys(keyReport)) {
     DEBUG_PRINTLN("Key report send failed, will retry.");
     forceKeyReport = true;
     return false;
@@ -485,7 +530,7 @@ bool sendKeyboardReport(const KeyMap *map, uint8_t suppressMask) { // failed sen
 
 // press only, released after CONSUMER_KEY_HOLD_MS
 bool sendConsumerKey(uint16_t usage) {
-  if (!blehid.consumerKeyPress(usage)) return false;
+  if (!sendConsumer(usage)) return false;
   consumerReleasePending = true;
   consumerPressTime = millis();
   DEBUG_PRINT("Media key "); DEBUG_PRINTLN(usage);
@@ -522,7 +567,7 @@ void handleKeyReports() {
   const KeyMap *map = &modeDef(currentMode)->keys;
   unsigned long now = millis();
   // release held consumer key (any mode, retried)
-  if (consumerReleasePending && now - consumerPressTime >= CONSUMER_KEY_HOLD_MS && blehid.consumerKeyRelease())
+  if (consumerReleasePending && now - consumerPressTime >= CONSUMER_KEY_HOLD_MS && sendConsumer(0))
     consumerReleasePending = false;
   if (map->consumer) {
     forceKeyReport = false;
@@ -652,14 +697,19 @@ void setup() {
   Bluefruit.Security.setPairCompleteCallback(blePairCompleteCallback);
   Bluefruit.setTxPower(BLE_TX_POWER);
   Bluefruit.setName(BLE_DEVICE_NAME);
+  Bluefruit.setAppearance(BLE_APPEARANCE);
   bledis.setManufacturer(BLE_MANUFACTURER);
   bledis.setModel(BLE_DEVICE_MODEL);
   bledis.begin();
+  static uint16_t inputLen[] = {N_KEY_REPORT, 2};
+  buildReportMap();
+  blehid.setReportLen(inputLen);
+  blehid.setReportMap(hidReportMap, hidReportMapLen);
   blehid.begin();
 
   Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
   Bluefruit.Advertising.addTxPower();
-  Bluefruit.Advertising.addAppearance(BLE_APPEARANCE_HID_KEYBOARD);
+  Bluefruit.Advertising.addAppearance(BLE_APPEARANCE);
   Bluefruit.Advertising.addService(blehid);
   Bluefruit.Advertising.addName();
   Bluefruit.Advertising.restartOnDisconnect(true);
