@@ -99,7 +99,8 @@ final class ControllerProbe {
 
         @Override
         public void onServicesDiscovered(BluetoothGatt g, int status) {
-            hasUpdateService = g.getService(Protocol.OTA_SERVICE) != null;
+            hasUpdateService = g.getService(Protocol.OTA_SERVICE) != null
+                || g.getService(Protocol.NORDIC_DFU_SERVICE) != null;
             BluetoothGattService info = g.getService(Protocol.DEVICE_INFO_SERVICE);
             BluetoothGattCharacteristic revision = info == null ? null : info.getCharacteristic(Protocol.FIRMWARE_REVISION);
             pnp = info == null ? null : info.getCharacteristic(Protocol.PNP_ID);

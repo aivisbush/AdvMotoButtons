@@ -3,7 +3,7 @@
 
 The site is the gh-pages branch, where index.html is edited; this adds
 moto-buttons.apk and
-  firmware/<board>/<channel>/MotoButtons2-<version>.bin
+  firmware/<board>/<channel>/MotoButtons2-<version>.bin  (.zip DFU package for nrf52840)
   firmware/latest.json  {"boards": {"<board>": {"prod": {...}, "beta": {...}}}}
 Each entry: {"version", "file", "size", "md5"}. Other boards and channels are kept.
 Version and board come from the MBFWVER= / MBBOARD= tags inside the image.
@@ -18,6 +18,7 @@ import json
 import re
 import shutil
 import sys
+import zipfile
 from pathlib import Path
 
 MAX_IMAGE = 0x140000
@@ -28,13 +29,26 @@ def tag(data, prefix):
     return m.group(1).decode() if m else None
 
 
-def publish_firmware(site, image_path, channel, expect_board, expect_version):
-    data = Path(image_path).read_bytes()
+def read_tags(image_path, data):
+    """Tags of an ESP32 app image, or of the application inside an nRF52840 DFU package."""
+    if data[:4] == b'PK\x03\x04':
+        with zipfile.ZipFile(image_path) as package:
+            names = package.namelist()
+            apps = [n for n in names if n.endswith('.bin')]
+            if 'manifest.json' not in names or len(apps) != 1:
+                sys.exit(f'{image_path} is not a DFU package (manifest.json + one .bin)')
+            app = package.read(apps[0])
+        return tag(app, 'MBFWVER='), tag(app, 'MBBOARD='), 'zip'
     if not data or data[0] != 0xE9:
         sys.exit(f'{image_path} is not a controller firmware image')
     if len(data) > MAX_IMAGE:
         sys.exit(f'{image_path} is too big; use the app .bin, not the merged one')
-    version, board = tag(data, 'MBFWVER='), tag(data, 'MBBOARD=')
+    return tag(data, 'MBFWVER='), tag(data, 'MBBOARD='), 'bin'
+
+
+def publish_firmware(site, image_path, channel, expect_board, expect_version):
+    data = Path(image_path).read_bytes()
+    version, board, ext = read_tags(image_path, data)
     if not version or not board:
         sys.exit('The image has no MBFWVER=/MBBOARD= tags (needs firmware 2.4.0 or newer)')
     if expect_board and board != expect_board:
@@ -44,9 +58,9 @@ def publish_firmware(site, image_path, channel, expect_board, expect_version):
 
     folder = site / 'firmware' / board / channel
     folder.mkdir(parents=True, exist_ok=True)
-    for old in folder.glob('MotoButtons2-*.bin'):
+    for old in list(folder.glob('MotoButtons2-*.bin')) + list(folder.glob('MotoButtons2-*.zip')):
         old.unlink()
-    name = f'MotoButtons2-{version}.bin'
+    name = f'MotoButtons2-{version}.{ext}'
     (folder / name).write_bytes(data)
 
     manifest_path = site / 'firmware' / 'latest.json'

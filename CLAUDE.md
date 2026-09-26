@@ -51,9 +51,13 @@ compiles as tabs:
 The nRF52840 sketch `ArduinoCode/MotoButtonsNRF/MotoButtonsNRF.ino` is a single file (Bluefruit, the
 2.1 code from the `nRF52840` branch): RGB LED instead of an OLED, digital inputs with pull-downs
 (active high), settings in InternalFS, custom `BLEHidGeneric` descriptor with only the modes' keys,
-generic HID appearance. It reports `FIRMWARE_VERSION` (0x2A26) and `BOARD_PRODUCT_ID` (PnP ID) like
-the ESP32 build but has **no Bluetooth update service yet**; the app lists it (PnP vendor Nordic
-0x1915 + known product) and says to update by USB.
+generic HID appearance. It reports `FIRMWARE_VERSION` (0x2A26) and `BOARD_PRODUCT_ID` (PnP ID, vendor
+Nordic 0x1915) like the ESP32 build. From 2.3.0 it has Bluefruit's `BLEDfu` service (Nordic legacy DFU
+`00001530-1212-efde-1523-785feabcd123`, control point write limited to encrypted links by a subclass):
+a write there saves the bond for the bootloader and restarts into the Adafruit bootloader's BLE DFU mode.
+The app (`NrfDfuClient.java`, Nordic `no.nordicsemi.android:dfu:2.10.1`; 2.11 needs compileSdk 36)
+sends the `.zip` DFU package from the build with keepBond. Firmware without the service (2.2.0) is
+listed with "update over USB". **Not yet tested on hardware.**
 
 Elsewhere: `.github/workflows/compile.yml` compiles every board in `release.json` on every push, `Docs/` holds reference notes
 (read them before touching input handling or DMD2 behaviour), `Programming/README.md` is the
@@ -178,7 +182,8 @@ edited on `gh-pages` itself; this branch has no copy), `moto-buttons.apk`, `firm
 `firmware/latest.json` = `{"boards":{"<board>":{"prod":{version,file,size,md5},"beta":{...}}}}`.
 Tags drive `.github/workflows/release.yml`: `<board>/v<ver>` (prod), `<board>/v<ver>-beta.N` (beta),
 `app/v<ver>`; it builds with the board's entry in `release.json` (`sketch`, `profile`, `ota`), checks
-the tag against the `MBFWVER=` tag in the build, and for `"ota": true` boards commits the `.bin` to
+the tag against the `MBFWVER=` tag in the build, and for `"ota": true` boards commits the `.bin`
+(nRF52840: `.zip`, tags read from the application inside) to
 `gh-pages` via `.github/scripts/publish.py` (which also checks `MBBOARD=`). Every build goes to a GitHub
 Release; the nRF52840 one as `.zip` (DFU package) and `.hex`. The board is
 reported to the app as the Bluetooth PnP ID product (`BOARD_PRODUCT_ID`, no GATT change) and the
@@ -216,8 +221,9 @@ Both in `config.h`:
 
 ## Open items
 
-- nRF52840: no Bluetooth update yet (plan: Adafruit `BLEDfu` + Nordic DFU library in the app;
-  adding the service means every phone re-pairs).
+- nRF52840 Bluetooth update (firmware 2.3.0 + app 1.5) is compile-checked only. First 2.3.0 flash is
+  by USB and the phone must re-pair (new GATT service). Unknown until tested: whether the XIAO's
+  bootloader accepts BLE DFU with the shared bond.
 - `esp32c3` and `esp32c6` profiles (2.5.0) are compile-checked only, **not flashed**. Against their
   old branches they gain Locus, the non-keyboard HID, `DMD-Remote3`, OTA, A+C restart and the
   post-boot orientation window; A+B now switches the steady LED colour off/on instead of stepping

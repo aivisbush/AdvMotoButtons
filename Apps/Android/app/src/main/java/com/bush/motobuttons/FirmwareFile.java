@@ -1,8 +1,15 @@
 package com.bush.motobuttons;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
-/** A controller firmware image: validity check and the embedded version and board tags. */
+/**
+ * A controller firmware file: an ESP32 app image (.bin) or an nRF52840 DFU
+ * package (.zip), with its validity check and embedded version and board tags.
+ */
 final class FirmwareFile {
     // config.h: FIRMWARE_VERSION_TAG = "MBFWVER=<version>", BOARD_ID_TAG = "MBBOARD=<board>"
     private static final String VERSION_TAG = "MBFWVER=";
@@ -12,16 +19,20 @@ final class FirmwareFile {
     final String name;
     final String version; // null when the image has no tag
     final String board;   // null when the image has no tag (before 2.4.0)
+    final boolean dfuPackage; // nRF52840 .zip for Nordic DFU
 
-    private FirmwareFile(byte[] bytes, String name, String version, String board) {
+    private FirmwareFile(byte[] bytes, String name, String version, String board, boolean dfuPackage) {
         this.bytes = bytes;
         this.name = name;
         this.version = version;
         this.board = board;
+        this.dfuPackage = dfuPackage;
     }
 
     /** Returns null and sets error[0] when the bytes are not a usable image. */
     static FirmwareFile parse(byte[] bytes, String name, String[] error) {
+        if (bytes.length > 4 && bytes[0] == 'P' && bytes[1] == 'K' && bytes[2] == 3 && bytes[3] == 4)
+            return parseDfuPackage(bytes, name, error);
         if (bytes.length == 0 || (bytes[0] & 0xFF) != Protocol.IMAGE_MAGIC) {
             error[0] = name + " is not a controller firmware file.";
             return null;
@@ -30,7 +41,43 @@ final class FirmwareFile {
             error[0] = name + " is too big. Use the app .bin, not the merged one.";
             return null;
         }
-        return new FirmwareFile(bytes, name, findTag(bytes, VERSION_TAG), findTag(bytes, BOARD_TAG));
+        return new FirmwareFile(bytes, name, findTag(bytes, VERSION_TAG), findTag(bytes, BOARD_TAG), false);
+    }
+
+    /** A DFU package holds manifest.json, the application .bin and its .dat init packet. */
+    private static FirmwareFile parseDfuPackage(byte[] bytes, String name, String[] error) {
+        byte[] app = null;
+        boolean manifest = false;
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(bytes))) {
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                if (entry.getName().equals("manifest.json"))
+                    manifest = true;
+                else if (entry.getName().endsWith(".bin"))
+                    app = readEntry(zip);
+            }
+        } catch (Exception e) {
+            error[0] = name + " is not a readable .zip file.";
+            return null;
+        }
+        String board = app == null ? null : findTag(app, BOARD_TAG);
+        if (!manifest || board == null) {
+            error[0] = name + " is not a controller firmware package.";
+            return null;
+        }
+        return new FirmwareFile(bytes, name, findTag(app, VERSION_TAG), board, true);
+    }
+
+    private static byte[] readEntry(ZipInputStream zip) throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int n;
+        while ((n = zip.read(buffer)) > 0) {
+            out.write(buffer, 0, n);
+            if (out.size() > Protocol.MAX_IMAGE_SIZE)
+                throw new Exception("too big");
+        }
+        return out.toByteArray();
     }
 
     /** True when this image may go to a controller of that board. */

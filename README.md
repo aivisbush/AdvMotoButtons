@@ -11,7 +11,7 @@ player.
 | **ESP32-C3 OLED Mini** (main build) | 72x40 OLED + status LED | [ArduinoCode/MotoButtons2](ArduinoCode/MotoButtons2) | yes, from the phone |
 | **Seeed XIAO ESP32C3** | RGB LED | [ArduinoCode/MotoButtons2](ArduinoCode/MotoButtons2) (board flag) | yes, from the phone |
 | **Seeed XIAO ESP32C6** | RGB LED | [ArduinoCode/MotoButtons2](ArduinoCode/MotoButtons2) | yes, from the phone |
-| **Seeed XIAO nRF52840** | RGB LED | [ArduinoCode/MotoButtonsNRF](ArduinoCode/MotoButtonsNRF) | not yet (USB only) |
+| **Seeed XIAO nRF52840** | RGB LED | [ArduinoCode/MotoButtonsNRF](ArduinoCode/MotoButtonsNRF) | yes, from 2.3.0 (not yet tested) |
 
 The three ESP32 boards share one sketch; [Programming](Programming/README.md) says how to pick the
 board. The User Manual below describes the ESP32-C3 OLED build; the others are under
@@ -146,11 +146,12 @@ with. The page walks through three steps:
    (DMD Manage stays).
 
 The controller needs firmware 2.2.0 or newer for Bluetooth updates; older ones are flashed once by USB.
-The nRF52840 build (2.2.0 or newer) is listed with its version, but has no Bluetooth update yet: update it by USB.
+The nRF52840 build updates from 2.3.0 on: the app restarts it into its bootloader and sends the `.zip`
+package. 2.2.0 is listed but must be updated to 2.3.0 by USB once, then forgotten and re-paired.
 The app tells the boards apart (ESP32-C3 OLED, ESP32-C3, ESP32-C6, nRF52840) by the product ID in the
 controller's Bluetooth PnP ID and only offers that board's firmware. Its menu has **Beta firmware** to
-also offer newer beta releases, and **Use a .bin file** installs a firmware file saved on the phone
-(the app image `MotoButtons2.ino.bin`, not the merged one). The first firmware with the update service
+also offer newer beta releases, and **Use a firmware file** installs a firmware file saved on the phone
+(ESP32: the app image `MotoButtons2.ino.bin`, not the merged one; nRF52840: the `.zip` package). The first firmware with the update service
 has to be flashed by USB once, and every phone must then forget and re-pair the controller.
 
 ### Publishing releases
@@ -162,7 +163,7 @@ builds, checks and publishes one board's firmware ([release.yml](.github/workflo
 | `esp32c3-oled/v2.4.1` | production firmware 2.4.1 for the ESP32-C3 OLED board |
 | `esp32c3-oled/v2.4.2-beta.1` | beta firmware; the app offers it only with *Beta firmware* on |
 | `esp32c3/v2.5.0`, `esp32c6/v2.5.0` | firmware for the XIAO ESP32C3 / ESP32C6 boards |
-| `nrf52840/v2.2.0` | nRF52840 firmware, as a GitHub Release only (`.zip` DFU package and `.hex`) |
+| `nrf52840/v2.3.0` | nRF52840 firmware: `.zip` DFU package on the site, plus `.hex` in the Release |
 | `app/v1.4` | the Android app (`moto-buttons.apk`) |
 
 1. Set the version in the board's sketch (`FIRMWARE_VERSION_TAG`, e.g. `MBFWVER=2.4.1` or
@@ -240,7 +241,8 @@ Same firmware as the OLED build, with an RGB LED instead of the display:
 - Buttons and joystick switch to 3V3; on the C3 the joystick centre switches to GND
 
 ### nRF52840 build
-Same modes and Bluetooth name (`DMD-Remote3`); differences from the ESP32-C3 OLED build:
+Same modes and Bluetooth name (`DMD-Remote3`), Bluetooth updates from 2.3.0; differences from the
+ESP32-C3 OLED build:
 - DMD2 mode sends `F8` for the joystick centre (map it in DMD2's Remote 3 settings like the rest)
 - **A+B** held changes the LED brightness; the dimmest step is off and pauses 1.5 s so it is easy to
   release

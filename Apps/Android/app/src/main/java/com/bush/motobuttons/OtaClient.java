@@ -21,15 +21,7 @@ import java.util.Arrays;
  * The controller verifies the MD5 and restarts into the new image.
  */
 @SuppressLint("MissingPermission")
-final class OtaClient {
-    interface Listener {
-        void onProgress(int sent, int total);
-
-        void onStatus(String text);
-
-        void onFinished(boolean success, String message);
-    }
-
+final class OtaClient implements FirmwareUpdate {
     private static final long IDLE_TIMEOUT_MS = 15000;
 
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -58,13 +50,15 @@ final class OtaClient {
         this.listener = listener;
     }
 
-    void start() {
+    @Override
+    public void start() {
         status("Connecting to " + device.getName() + "...");
         kick();
         gatt = device.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE);
     }
 
-    void cancel() {
+    @Override
+    public void cancel() {
         if (control != null && gatt != null && !finished)
             GattCompat.write(gatt, control, new byte[]{Protocol.CMD_ABORT});
         fail("cancelled");

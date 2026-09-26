@@ -45,5 +45,9 @@
                 <data android:scheme="motobuttons" android:host="open" />
             </intent-filter>
         </activity>
+        <!-- Nordic DFU transfer for the nRF52840 controller. -->
+        <service
+            android:name=".DfuService"
+            android:exported="false" />
     </application>
 </manifest>

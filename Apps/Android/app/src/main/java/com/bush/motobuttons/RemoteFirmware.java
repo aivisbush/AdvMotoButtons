@@ -16,6 +16,7 @@ import java.util.Map;
  * SITE_URL/firmware/latest.json =
  *   {"boards":{"esp32c3-oled":{"prod":{"version":"2.4.0","file":"esp32c3-oled/prod/MotoButtons2-2.4.0.bin",
  *                                     "size":..,"md5":".."},"beta":{...}}}}
+ * The nRF52840 entries point to a DFU package (.zip) instead of a .bin.
  * Blocking calls; run them off the main thread.
  */
 final class RemoteFirmware {

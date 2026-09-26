@@ -64,7 +64,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean wantBeta; // "Beta firmware" menu switch
     private String remoteError;
     private boolean downloading;
-    private OtaClient ota;
+    private FirmwareUpdate ota;
 
     private static final class Controller {
         final BluetoothDevice device;
@@ -440,7 +440,7 @@ public class MainActivity extends AppCompatActivity {
         progressText.setText("");
         statusText.setText("");
         String version = firmware.version;
-        ota = new OtaClient(this, controller.device, firmware.bytes, new OtaClient.Listener() {
+        FirmwareUpdate.Listener listener = new FirmwareUpdate.Listener() {
             @Override
             public void onProgress(int sent, int total) {
                 int percent = (int) (100L * sent / total);
@@ -466,7 +466,10 @@ public class MainActivity extends AppCompatActivity {
                     refreshUpdateCard();
                 }
             }
-        });
+        };
+        ota = firmware.dfuPackage
+            ? new NrfDfuClient(this, controller.device, firmware.bytes, listener)
+            : new OtaClient(this, controller.device, firmware.bytes, listener);
         refreshUpdateCard();
         ota.start();
     }

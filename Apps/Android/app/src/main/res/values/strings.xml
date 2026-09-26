@@ -7,7 +7,7 @@
     <string name="firmware_update">Firmware</string>
     <string name="update_firmware">Update firmware</string>
     <string name="dmd_support">DMD2 support</string>
-    <string name="use_file">Use a .bin file</string>
+    <string name="use_file">Use a firmware file</string>
     <string name="beta_firmware">Beta firmware</string>
     <string name="all_set">All set</string>
     <string name="close">Close</string>

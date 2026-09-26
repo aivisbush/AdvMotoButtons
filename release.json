@@ -19,7 +19,7 @@
     "nrf52840": {
       "sketch": "ArduinoCode/MotoButtonsNRF",
       "profile": "nrf52840",
-      "ota": false
+      "ota": true
     }
   }
 }

@@ -9,6 +9,11 @@ Device: Seeed XIAO nRF52840 (MotoButtons 2)
 #include <Adafruit_TinyUSB.h>
 #include <string.h>
 
+// One board setting only: another one changes the USB identity (new COM port) and the build.
+#ifndef ARDUINO_Seeed_XIAO_nRF52840_Sense
+#error "Select Tools > Board > Seeed nRF52 Boards > Seeed XIAO nRF52840 Sense"
+#endif
+
 using namespace Adafruit_LittleFS_Namespace;
 
 /*============================ USER CONFIGURATION ============================*/
@@ -17,7 +22,7 @@ using namespace Adafruit_LittleFS_Namespace;
   The tag prefixes let the release tools read version and board from the build.
   The phone reads the version as Firmware Revision and the board as the PnP ID product.
 */
-const char FIRMWARE_VERSION_TAG[] = "MBFWVER=2.2.0";
+const char FIRMWARE_VERSION_TAG[] = "MBFWVER=2.3.0";
 const char *const FIRMWARE_VERSION = FIRMWARE_VERSION_TAG + 8;
 const char BOARD_ID_TAG[] = "MBBOARD=nrf52840";
 const uint16_t BOARD_PRODUCT_ID = 0x4004;
@@ -154,6 +159,16 @@ const uint8_t ORIENTATION_PINS[4][4] = {
 
 File file(InternalFS);
 BLEDis bledis;
+// Nordic DFU service: the phone app uses it to restart the board into its bootloader
+// for a Bluetooth update. Only a paired (encrypted) link may trigger it.
+class PairedOnlyDfu : public BLEDfu {
+ public:
+  err_t begin() override {
+    _chr_control.setPermission(SECMODE_ENC_NO_MITM, SECMODE_ENC_NO_MITM);
+    return BLEDfu::begin();
+  }
+};
+PairedOnlyDfu bledfu;
 BLEHidGeneric blehid(2); // input reports: keyboard, consumer
 enum { REPORT_ID_KEYBOARD = 1, REPORT_ID_CONSUMER };
 bool BLE_connected = false;
@@ -710,6 +725,7 @@ void setup() {
   Bluefruit.setTxPower(BLE_TX_POWER);
   Bluefruit.setName(BLE_DEVICE_NAME);
   Bluefruit.setAppearance(BLE_APPEARANCE);
+  bledfu.begin(); // before the other services; adding it means phones must re-pair once
   bledis.setManufacturer(BLE_MANUFACTURER);
   bledis.setModel(BLE_DEVICE_MODEL);
   bledis.setFirmwareRev(FIRMWARE_VERSION);

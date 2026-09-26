@@ -5,7 +5,7 @@
 # Firmware is built from the tagged commit with the board's entry in release.json and
 # checked against the tag. Boards with "ota": true are added to the gh-pages branch (the
 # GitHub Pages site, where the phone app finds them); every build is attached to a
-# GitHub Release (nRF52840: the .zip DFU package and the .hex). The app needs the secrets ANDROID_KEYSTORE_BASE64 and
+# GitHub Release. The nRF52840 build is the .zip DFU package (site and release) plus the .hex. The app needs the secrets ANDROID_KEYSTORE_BASE64 and
 # ANDROID_KEYSTORE_PASSWORD (see README, Publishing releases).
 name: Release
 
@@ -77,7 +77,7 @@ jobs:
           git fetch origin gh-pages
           git worktree add pages origin/gh-pages
           python3 .github/scripts/publish.py --site pages \
-            --firmware "dist/MotoButtons2-${{ steps.meta.outputs.board }}-${{ steps.meta.outputs.fullversion }}.bin" \
+            --firmware "$(ls dist/*.bin dist/*.zip 2>/dev/null | head -1)" \
             --channel "${{ steps.meta.outputs.channel }}" \
             --expect-board "${{ steps.meta.outputs.board }}" --expect-version "${{ steps.meta.outputs.fullversion }}"
           cd pages
