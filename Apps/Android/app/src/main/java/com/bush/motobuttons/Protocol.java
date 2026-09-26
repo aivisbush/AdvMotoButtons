@@ -11,6 +11,8 @@ final class Protocol {
     static final UUID DEVICE_INFO_SERVICE = UUID.fromString("0000180a-0000-1000-8000-00805f9b34fb");
     static final UUID FIRMWARE_REVISION = UUID.fromString("00002a26-0000-1000-8000-00805f9b34fb");
     static final UUID PNP_ID = UUID.fromString("00002a50-0000-1000-8000-00805f9b34fb");
+    static final UUID MODEL_NUMBER = UUID.fromString("00002a24-0000-1000-8000-00805f9b34fb");
+    static final UUID MANUFACTURER_NAME = UUID.fromString("00002a29-0000-1000-8000-00805f9b34fb");
     static final UUID CCCD = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
     // Nordic legacy DFU service of the nRF52840 firmware (Bluefruit BLEDfu).
     static final UUID NORDIC_DFU_SERVICE = UUID.fromString("00001530-1212-efde-1523-785feabcd123");

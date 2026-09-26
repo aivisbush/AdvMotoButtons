@@ -201,9 +201,9 @@ public class MainActivity extends AppCompatActivity {
             searchFinished();
             return;
         }
-        ControllerProbe.probe(this, next, (device, isController, version, board, canUpdate) -> {
-            if (isController)
-                addController(device, version, board, canUpdate);
+        ControllerProbe.probe(this, next, (device, result) -> {
+            if (result.isController)
+                addController(device, result);
             probeNext();
         });
     }
@@ -218,12 +218,18 @@ public class MainActivity extends AppCompatActivity {
         refreshUpdateCard();
     }
 
-    private void addController(BluetoothDevice device, String version, String board, boolean canUpdate) {
-        controllers.put(device.getAddress(), new Controller(device, version, board, canUpdate));
+    private void addController(BluetoothDevice device, ControllerProbe.Result result) {
+        controllers.put(device.getAddress(), new Controller(device, result.version, result.board, result.canUpdate));
         MaterialRadioButton button = new MaterialRadioButton(this);
         button.setId(View.generateViewId());
         button.setTag(device.getAddress());
-        button.setText(device.getName() + "  ·  v" + version + "\n" + Board.displayName(board));
+        // Name and version, board, then model and manufacturer when the controller reports them.
+        StringBuilder text = new StringBuilder(device.getName() + "  ·  v" + result.version + "\n" + Board.displayName(result.board));
+        String maker = result.model != null && result.manufacturer != null ? result.model + "  ·  " + result.manufacturer
+            : result.model != null ? result.model : result.manufacturer;
+        if (maker != null)
+            text.append("\n").append(maker);
+        button.setText(text);
         controllerGroup.addView(button);
         if (controllers.size() == 1)
             button.setChecked(true);

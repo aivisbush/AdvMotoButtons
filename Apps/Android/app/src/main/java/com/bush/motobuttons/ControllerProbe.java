@@ -12,17 +12,31 @@ import android.os.Handler;
 import android.os.Looper;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.UUID;
 
 /**
  * Connects to one paired device and tells whether it is a Moto Buttons
- * controller, which firmware it runs (Firmware Revision) and which board it
- * is (PnP ID product). A controller either has the update service or, like
- * the nRF52840 build, reports one of our boards in its PnP ID.
+ * controller, which firmware it runs (Firmware Revision), which board it
+ * is (PnP ID product) and its Manufacturer Name and Model Number. A
+ * controller either has an update service or, like the nRF52840 build
+ * before 2.3.0, reports one of our boards in its PnP ID.
  */
 @SuppressLint("MissingPermission")
 final class ControllerProbe {
+    /** What the probe found; manufacturer and model are null when not reported. */
+    static final class Result {
+        boolean isController;
+        boolean canUpdate;
+        String version = "?";
+        String board = Board.ESP32C3_OLED; // older firmware did not report a board
+        String manufacturer;
+        String model;
+    }
+
     interface Callback {
-        void onResult(BluetoothDevice device, boolean isController, String firmwareVersion, String board, boolean canUpdate);
+        void onResult(BluetoothDevice device, Result result);
     }
 
     private static final long TIMEOUT_MS = 6000;
@@ -33,13 +47,11 @@ final class ControllerProbe {
     private final Handler main = new Handler(Looper.getMainLooper());
     private final BluetoothDevice device;
     private final Callback callback;
+    private final Result result = new Result();
+    private final Deque<BluetoothGattCharacteristic> reads = new ArrayDeque<>();
     private BluetoothGatt gatt;
-    private BluetoothGattCharacteristic pnp;
     private boolean finished;
-    private boolean hasUpdateService;
     private boolean boardReported;
-    private String version = "?";
-    private String board = Board.ESP32C3_OLED; // older firmware did not report a board
 
     private ControllerProbe(BluetoothDevice device, Callback callback) {
         this.device = device;
@@ -62,30 +74,46 @@ final class ControllerProbe {
                 gatt.disconnect();
                 gatt.close();
             }
-            boolean isController = complete && (hasUpdateService || boardReported);
-            callback.onResult(device, isController, version, board, hasUpdateService);
+            result.isController = complete && (result.canUpdate || boardReported);
+            callback.onResult(device, result);
         });
     }
 
+    private void readNext() {
+        while (!reads.isEmpty()) {
+            if (gatt.readCharacteristic(reads.poll()))
+                return;
+        }
+        finish(true);
+    }
+
+    private static String text(byte[] value) {
+        String s = new String(value, StandardCharsets.UTF_8).trim();
+        return s.isEmpty() ? null : s;
+    }
+
     private void onRead(BluetoothGattCharacteristic characteristic, byte[] value, int status) {
-        boolean ok = status == BluetoothGatt.GATT_SUCCESS && value != null;
-        if (characteristic.getUuid().equals(Protocol.FIRMWARE_REVISION)) {
-            if (ok)
-                version = new String(value, StandardCharsets.UTF_8).trim();
-            if (pnp == null || !gatt.readCharacteristic(pnp))
-                finish(true);
-        } else {
-            // PnP ID: source(1) vendor(2) product(2) version(2), little endian.
-            if (ok && value.length >= 5) {
+        if (status == BluetoothGatt.GATT_SUCCESS && value != null) {
+            UUID uuid = characteristic.getUuid();
+            if (uuid.equals(Protocol.FIRMWARE_REVISION)) {
+                String version = text(value);
+                if (version != null)
+                    result.version = version;
+            } else if (uuid.equals(Protocol.MANUFACTURER_NAME)) {
+                result.manufacturer = text(value);
+            } else if (uuid.equals(Protocol.MODEL_NUMBER)) {
+                result.model = text(value);
+            } else if (uuid.equals(Protocol.PNP_ID) && value.length >= 5) {
+                // PnP ID: source(1) vendor(2) product(2) version(2), little endian.
                 int vendor = (value[1] & 0xFF) | (value[2] & 0xFF) << 8;
                 String id = Board.fromProductId((value[3] & 0xFF) | (value[4] & 0xFF) << 8);
                 if (id != null) {
-                    board = id;
+                    result.board = id;
                     boardReported = vendor == VENDOR_ESPRESSIF || vendor == VENDOR_NORDIC;
                 }
             }
-            finish(true);
         }
+        readNext();
     }
 
     private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
@@ -99,19 +127,20 @@ final class ControllerProbe {
 
         @Override
         public void onServicesDiscovered(BluetoothGatt g, int status) {
-            hasUpdateService = g.getService(Protocol.OTA_SERVICE) != null
+            result.canUpdate = g.getService(Protocol.OTA_SERVICE) != null
                 || g.getService(Protocol.NORDIC_DFU_SERVICE) != null;
             BluetoothGattService info = g.getService(Protocol.DEVICE_INFO_SERVICE);
-            BluetoothGattCharacteristic revision = info == null ? null : info.getCharacteristic(Protocol.FIRMWARE_REVISION);
-            pnp = info == null ? null : info.getCharacteristic(Protocol.PNP_ID);
-            if (!hasUpdateService && pnp == null) {
-                finish(false); // no update service and no board: not ours
+            if (info == null) {
+                finish(result.canUpdate); // no update service and no device information: not ours
                 return;
             }
-            if (revision != null && g.readCharacteristic(revision))
-                return;
-            if (pnp == null || !g.readCharacteristic(pnp))
-                finish(true);
+            for (UUID uuid : new UUID[]{Protocol.FIRMWARE_REVISION, Protocol.PNP_ID,
+                Protocol.MANUFACTURER_NAME, Protocol.MODEL_NUMBER}) {
+                BluetoothGattCharacteristic characteristic = info.getCharacteristic(uuid);
+                if (characteristic != null)
+                    reads.add(characteristic);
+            }
+            readNext();
         }
 
         @Override
