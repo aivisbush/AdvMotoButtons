@@ -1,55 +1,85 @@
 # MotoButtons 2 - project context
 
-Handlebar BLE HID controller for motorcycle navigation. An **ESP32-C3 OLED Mini** board with a
-5-way joystick and three buttons presents itself as a Bluetooth keyboard and drives DMD2, OsmAnd, Locus
-Map or a media player, showing status on a 72x40 OLED.
+Handlebar BLE HID controller for motorcycle navigation. A board with a 5-way joystick and three
+buttons presents itself as a Bluetooth keyboard and drives DMD2, OsmAnd, Locus Map or a media player.
 
-Fork of [joncox123/MotoButtons2](https://github.com/joncox123/MotoButtons2), rewritten for the
-ESP32-C3 (the original targets an nRF52840). Work happens on the `esp32c3OLED` branch; `dev` is the
-main branch.
+Fork of [joncox123/MotoButtons2](https://github.com/joncox123/MotoButtons2). One branch holds every
+board: work happens on `ota` (to be merged to `main`); the old per-chip branches (`esp32`, `esp32c3`,
+`esp32c3OLED`, `nRF52840`) are to be archived. Boards and sketches:
+
+| Board id | Board | Sketch | Profile | Product ID |
+|---|---|---|---|---|
+| `esp32c3-oled` | ESP32-C3 OLED Mini (72x40 OLED) | `ArduinoCode/MotoButtons2` | `xiao_esp32c3` | 0x4001 |
+| `esp32c3` | Seeed XIAO ESP32C3 (RGB LED) | `ArduinoCode/MotoButtons2` + `-DMB_BOARD_ESP32C3` | `xiao_esp32c3` | 0x4002 |
+| `esp32c6` | Seeed XIAO ESP32C6 (RGB LED) | `ArduinoCode/MotoButtons2` | `xiao_esp32c6` | 0x4003 |
+| `nrf52840` | Seeed XIAO nRF52840 (RGB LED) | `ArduinoCode/MotoButtonsNRF` | `nrf52840` | 0x4004 |
+
+`release.json` lists the boards for CI and releases (sketch, profile, optional compiler `flags`, `ota`).
+
+**ESP32 board selection.** `config.h` includes one `board_*.h`: `board_esp32c6.h` when the board
+setting is XIAO_ESP32C6 (`ARDUINO_XIAO_ESP32C6`), `board_esp32c3.h` when `MB_BOARD_ESP32C3` is
+defined (a commented `#define` in `config.h` for the IDE, `compiler.cpp.extra_flags` in CI; both C3
+boards share the XIAO_ESP32C3 setting, so nothing else tells them apart), else
+`board_esp32c3_oled.h`. Each header holds board name, `BOARD_ID_TAG`, `BOARD_PRODUCT_ID`, pins,
+input polarity (`BUTTONS_ACTIVE_LOW`, `CENTER_ACTIVE_LOW`), `JOYSTICK_ADC`, `BOARD_HAS_OLED`,
+`BOARD_HAS_RGB_LED`; unused pins are `PIN_NONE`, so every constant exists on every board. A
+`CONFIG_IDF_TARGET_*` check stops a header being built for the wrong chip. arduino-cli profiles cannot
+carry build flags, hence the `flags` field. The C3 and C6 joystick names are the directions in the
+default orientation, taken from the old branches' tables.
 
 ## Layout
 
-The sketch lives in `ArduinoCode/MotoButtons2/` as one `.ino` plus units the Arduino IDE compiles
-as tabs:
+The ESP32 sketch lives in `ArduinoCode/MotoButtons2/` as one `.ino` plus units the Arduino IDE
+compiles as tabs:
 
 | File | What |
 |---|---|
-| `MotoButtons2.ino` | `setup()`/`loop()`, status LED, boot orientation window, watchdog, boot log |
-| `config.h` | every tunable: pins, timings, thresholds, HID codes, BLE name, `DEBUG` switches, `FIRMWARE_VERSION` |
-| `inputs.h/.cpp` | `Button` struct array, ADC joystick reading, debounce, orientation table, diagnostics |
+| `MotoButtons2.ino` | `setup()`/`loop()`, boot orientation window, watchdog, boot log |
+| `config.h` | board selection and every tunable: timings, thresholds, HID codes, BLE name, `DEBUG` switches, `FIRMWARE_VERSION` |
+| `board_*.h` | per-board identity, pins, input polarity and indicators |
+| `inputs.h/.cpp` | `Button` struct array, ADC or digital reading, debounce, orientation table, diagnostics |
 | `keymap.h/.cpp` | per-mode key tables and the HID report engine |
 | `chords.h/.cpp` | button combinations: mode, display, restart, factory reset |
-| `oled.h/.cpp` | display state machine, rendering, dim/blank |
+| `oled.h/.cpp` | display state machine, rendering, dim/blank; no-op without `BOARD_HAS_OLED` |
+| `led.h/.cpp` | single status LED (breathing/dim) or RGB LED (blue blink waiting, mode colour, flashes) |
 | `ble_hid.h/.cpp` | NimBLE HID device, bonded-phone whitelist |
 | `ota.h/.cpp` | firmware update over BLE: custom GATT service, `Update` library, restart |
 | `settings.h/.cpp` | Preferences record with a schema version |
 | `debug.h` | `debugPrintf()` / `debugPrintln()`, compiled out when `DEBUG` is false |
-| `sketch.yaml` | arduino-cli profile pinning core and library versions |
+| `sketch.yaml` | arduino-cli profiles (one per chip) pinning core and library versions |
 
-Elsewhere: `.github/workflows/compile.yml` compiles on every push, `Docs/` holds reference notes
+The nRF52840 sketch `ArduinoCode/MotoButtonsNRF/MotoButtonsNRF.ino` is a single file (Bluefruit, the
+2.1 code from the `nRF52840` branch): RGB LED instead of an OLED, digital inputs with pull-downs
+(active high), settings in InternalFS, custom `BLEHidGeneric` descriptor with only the modes' keys,
+generic HID appearance. It reports `FIRMWARE_VERSION` (0x2A26) and `BOARD_PRODUCT_ID` (PnP ID) like
+the ESP32 build but has **no Bluetooth update service yet**, so the phone app does not list it.
+
+Elsewhere: `.github/workflows/compile.yml` compiles every board in `release.json` on every push, `Docs/` holds reference notes
 (read them before touching input handling or DMD2 behaviour), `Programming/README.md` is the
 flashing guide, `Wiring/` still shows the original nRF52840 drawing hand-annotated for C3 pins,
 `3D/` and `Design/` are case and photos. `Apps/Android` is the phone updater app (Java, no AndroidX,
-Gradle 8.9 / AGP 8.6.1, build with `JAVA_HOME` = Android Studio's `jbr` and `gradlew assembleDebug`);
-`Apps/Windows` is the portable setup tool (C# 5 WinForms, built by `build.ps1` with the .NET Framework
-4.8 `csc.exe`, the Android APK embedded as a resource).
+Gradle 8.9 / AGP 8.6.1, build with `JAVA_HOME` = Android Studio's `jbr` and `gradlew assembleDebug`).
 
 ## Building
 
-Arduino IDE, board **XIAO_ESP32C3**, esp32 core **3.3.8**, plus two Library Manager libraries that
-are *not* part of the core: **NimBLE-Arduino 2.5.0** and **U8g2 2.36.19**. `Preferences` and
-`Wire` ship with the core.
+ESP32 boards: Arduino IDE, board **XIAO_ESP32C3** (C3 and C3 OLED) or **XIAO_ESP32C6**, esp32 core **3.3.8**, plus two Library Manager
+libraries that are *not* part of the core: **NimBLE-Arduino 2.5.0** and **U8g2 2.36.19**.
+`Preferences` and `Wire` ship with the core. nRF52840: board **Seeed XIAO nRF52840 Sense**, Seeed
+nrf52 core **1.1.12** (Bluefruit and TinyUSB ship with it). Each sketch's `sketch.yaml` pins these.
 
 **Compile-check locally with the IDE's bundled arduino-cli.** There is no standalone `arduino-cli`
 on the machine, but Arduino IDE 2 ships one, and with the IDE's config file it uses the cores and
 libraries already installed. This is verified to work and takes about 80 s:
 
 ```
-"C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe" compile --config-file "%USERPROFILE%\.arduinoIDE\arduino-cli.yaml" --fqbn esp32:esp32:XIAO_ESP32C3 --warnings all --build-path <some temp dir> ArduinoCode/MotoButtons2
+"C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe" compile --config-file "%USERPROFILE%\.arduinoIDE\arduino-cli.yaml" --profile xiao_esp32c3 --output-dir <some temp dir> ArduinoCode/MotoButtons2
+"C:\Program Files\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe" compile --config-file "%USERPROFILE%\.arduinoIDE\arduino-cli.yaml" --profile nrf52840 --output-dir <some temp dir> ArduinoCode/MotoButtonsNRF
 ```
 
-Compile every change before reporting it done. Flashing still needs the IDE or `arduino-cli upload`.
+For the XIAO ESP32C3 add `--build-property "compiler.cpp.extra_flags=-DMB_BOARD_ESP32C3"`; for the
+C6 use `--profile xiao_esp32c6`. The ESP32 core also copies its output to
+`ArduinoCode/MotoButtons2/build/` (git-ignored). The nRF
+build's `.zip` is the DFU package. Compile every change before reporting it done. Flashing still needs the IDE or `arduino-cli upload`.
 
 Sources use **CRLF** line endings (`.gitattributes` and `.editorconfig` enforce it). Style: 2-space
 indent, Allman braces, `constexpr` constants in `config.h`, camelCase names, `debugPrintf()` for
@@ -58,7 +88,7 @@ logging. `.clang-format` matches; the Arduino guide's "avoid `#define`" is follo
 Arduino's sketch preprocessor generates no prototype for a function with default arguments. Keep
 such functions in `.h/.cpp` units (where real prototypes exist), never in the `.ino`.
 
-## Hardware notes
+## Hardware notes (ESP32-C3 OLED; C3/C6 pins are in their `board_*.h`)
 
 GPIO numbers, not Arduino `D` aliases (aliases move between board profiles):
 
@@ -121,9 +151,10 @@ Two independent checks, both verified on a Galaxy S21 (nRF52840 branch, same fix
    and in the GAP service.
 Both are cached at pairing: any change to the key set or appearance needs forget + re-pair.
 
-**The BLE device name is functional, not cosmetic.** DMD2 picks a button scheme by matching the
-Bluetooth name against its own list. Current name: `Bush Moto OLED` (not recognised, by choice for
-now). See [Docs/dmd2-recognition-notes.md](Docs/dmd2-recognition-notes.md).
+**The BLE device name is functional, not cosmetic.** DMD2 takes plain keys only as its paid Generic
+Remote Controller; its DMD Remote slots are fed by THORK's DMD Manage app, which accepts a device whose
+name contains `DMD-Remote3`. Both sketches use `DMD-Remote3`. Docs/dmd2-recognition-notes.md is
+older than this finding.
 
 **Orientation is chosen in the boot window.** For `ORIENTATION_WINDOW_MS` after start-up, a single
 direction held for `ORIENTATION_HOLD_MS` becomes UP. The mapping is a table of physical pins per
@@ -145,8 +176,10 @@ phone's private address and the switch should go to false.
 template in `site/`), `moto-buttons.apk`, `firmware/<board>/<prod|beta>/MotoButtons2-<ver>.bin` and
 `firmware/latest.json` = `{"boards":{"<board>":{"prod":{version,file,size,md5},"beta":{...}}}}`.
 Tags drive `.github/workflows/release.yml`: `<board>/v<ver>` (prod), `<board>/v<ver>-beta.N` (beta),
-`app/v<ver>`; it builds with the branch's `release.json`, checks the tag against the `MBFWVER=` and
-`MBBOARD=` tags in the `.bin` and commits to `gh-pages` via `site/tools/publish.py`. The board is
+`app/v<ver>`; it builds with the board's entry in `release.json` (`sketch`, `profile`, `ota`), checks
+the tag against the `MBFWVER=` tag in the build, and for `"ota": true` boards commits the `.bin` to
+`gh-pages` via `site/tools/publish.py` (which also checks `MBBOARD=`). Every build goes to a GitHub
+Release; the nRF52840 one as `.zip` (DFU package) and `.hex`. The board is
 reported to the app as the Bluetooth PnP ID product (`BOARD_PRODUCT_ID`, no GATT change) and the
 `BOARD_ID_TAG` string is kept in the image by a run-time reference in `ota.cpp` (the linker drops an
 unused constant). Version order: 2.4.1-beta.2 < 2.4.1. The app (`RemoteFirmware.java`) reads
@@ -155,8 +188,7 @@ unused constant). Version order: 2.4.1-beta.2 < 2.4.1. The app (`RemoteFirmware.
 `keystore.properties` live in `%USERPROFILE%\.motobuttons\` (never in the repo). The app checks DMD
 Manage (`DmdSupport.java`, needs the `<queries>` entry), opens from the page via `motobuttons://open`
 (intent URL), shows "All set" after an update and can uninstall itself (`ACTION_DELETE`). It declares
-`configChanges` so the controller's keyboard reconnecting does not recreate the screen, and handles
-adb commands only once per intent. Web and Windows installs must use the same (release) signature.
+`configChanges` so the controller's keyboard reconnecting does not recreate the screen.
 
 **Firmware update over BLE** (`ota.cpp`, hardware-tested 2.2.0 <-> 2.2.1 on a Galaxy S21). Service
 `6a2a0000-7a4e-4b5c-9d3f-2f6d6f746f62`, control `...0001` (write + notify: START size+MD5, FINISH,
@@ -165,11 +197,7 @@ The image goes to the idle slot of the default OTA partition table; `Update.end(
 the controller restarts after `OTA_RESTART_DELAY_MS`. The Firmware Revision characteristic (0x2A26) in
 the Device Information service carries `FIRMWARE_VERSION`; the app uses the update service to tell our
 controllers apart. The phone app mirrors the UUIDs in `Protocol.java`. Adding or changing a GATT
-service means every phone must forget and re-pair (Android caches the service list). The Windows tool
-pushes the image to `/sdcard/Android/data/com.bush.motobuttons/files/firmware.bin`, which the app
-loads on start. It configures DMD Manage with `adb shell settings put secure
-enabled_accessibility_services`, `cmd appops set ... ACCESS_RESTRICTED_SETTINGS allow` and the
-`deviceidle` whitelist; it downloads DMD Manage and platform-tools at run time (never commit them).
+service means every phone must forget and re-pair (Android caches the service list).
 
 **Watchdog.** The IDF task watchdog is reconfigured to `WATCHDOG_TIMEOUT_MS` (10 s) and the loop
 task subscribed. The longest blocking call is the 2 s factory-reset message; keep it that way.
@@ -187,9 +215,12 @@ Both in `config.h`:
 
 ## Open items
 
-- The 2.1.0 refactor is compile-checked but **not yet flashed and tested on the hardware**.
-- DMD2 still lists the controller as *Generic Remote Controller*; the Generic Remote Controller
-  entry needs a paid license in current DMD2 versions.
+- nRF52840: no Bluetooth update yet (plan: Adafruit `BLEDfu` + Nordic DFU library in the app;
+  adding the service means every phone re-pairs).
+- `esp32c3` and `esp32c6` profiles (2.5.0) are compile-checked only, **not flashed**. Against their
+  old branches they gain Locus, the non-keyboard HID, `DMD-Remote3`, OTA, A+C restart and the
+  post-boot orientation window; A+B now switches the steady LED colour off/on instead of stepping
+  brightness; the C3's DMD2 centre key is now `F5` (was `F8`). Settings start from defaults.
 - The joystick leakage is worked around, not repaired - the pod should be cleaned and dried, or
   given 10 kOhm pull-ups per line.
 - `Wiring/Wiring_Diagram_MotoButtons2_analog_mod.png` still shows the original nRF52840 drawing.

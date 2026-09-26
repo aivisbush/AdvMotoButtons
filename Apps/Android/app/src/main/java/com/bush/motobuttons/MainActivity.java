@@ -28,12 +28,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.progressindicator.LinearProgressIndicator;
 import com.google.android.material.radiobutton.MaterialRadioButton;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
-
 import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
 import java.io.InputStream;
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -46,17 +41,9 @@ import java.util.concurrent.Executors;
 /**
  * Finds the paired Moto Buttons controller, checks the project site for newer
  * firmware and installs it over Bluetooth; also checks DMD2 support.
- * The Windows tool can drive the same screen over adb:
- *   am start -n com.bush.motobuttons/.MainActivity -a com.bush.motobuttons.SCAN --ei seq N
- *   am start -n ... -a com.bush.motobuttons.UPDATE --ei seq N --es address AA:BB:..
- * and reads the answer from StatusFile.
  */
 @SuppressLint({"MissingPermission", "SetTextI18n"})
 public class MainActivity extends AppCompatActivity {
-    static final String ACTION_SCAN = "com.bush.motobuttons.SCAN";
-    static final String ACTION_UPDATE = "com.bush.motobuttons.UPDATE";
-    // The Windows tool pushes the image here: .../Android/data/<package>/files/firmware.bin
-    static final String PUSHED_FIRMWARE = "firmware.bin";
     private static final int REQUEST_PERMISSION = 1;
     private static final int REQUEST_FILE = 2;
 
@@ -68,20 +55,16 @@ public class MainActivity extends AppCompatActivity {
     private Button searchButton, updateButton, dmdButton;
 
     private final ExecutorService background = Executors.newSingleThreadExecutor();
-    private StatusFile status;
     private final Map<String, Controller> controllers = new LinkedHashMap<>();
     private final Deque<BluetoothDevice> probeQueue = new ArrayDeque<>();
     private boolean searching;
-    private int scanSeq = -1;
 
-    private FirmwareFile localFirmware;   // chosen file or pushed by the Windows tool
+    private FirmwareFile localFirmware;   // chosen with "Use a .bin file"
     private Map<String, RemoteFirmware.Channels> releases; // latest per board on the project site
     private boolean wantBeta; // "Beta firmware" menu switch
     private String remoteError;
     private boolean downloading;
     private OtaClient ota;
-    private int updateSeq = -1;
-    private String pendingUpdateAddress;
 
     private static final class Controller {
         final BluetoothDevice device;
@@ -99,7 +82,6 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        status = new StatusFile(this);
 
         mainView = findViewById(R.id.mainView);
         doneView = findViewById(R.id.doneView);
@@ -136,7 +118,7 @@ public class MainActivity extends AppCompatActivity {
             }
             return false;
         });
-        searchButton.setOnClickListener(v -> startSearch(-1));
+        searchButton.setOnClickListener(v -> startSearch());
         updateButton.setOnClickListener(v -> confirmUpdate());
         controllerGroup.setOnCheckedChangeListener((group, id) -> refreshUpdateCard());
         findViewById(R.id.closeButton).setOnClickListener(v -> finishAndRemoveTask());
@@ -145,52 +127,13 @@ public class MainActivity extends AppCompatActivity {
         if (!hasBluetoothPermission())
             requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT}, REQUEST_PERMISSION);
         checkForUpdate();
-        // A recreated screen or a launch from Recents must not repeat an old command.
-        boolean fresh = savedInstanceState == null
-            && (getIntent().getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0;
-        if (!fresh || !handleCommand(getIntent()))
-            startSearch(-1);
+        startSearch();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         refreshDmdCard(); // the user may come back from Settings or the installer
-    }
-
-    @Override
-    protected void onNewIntent(Intent intent) {
-        super.onNewIntent(intent);
-        setIntent(intent);
-        handleCommand(intent);
-    }
-
-    /* ----------------------------- commands ----------------------------- */
-
-    /** Runs a command from the Windows tool once; false when the intent carries none. */
-    private boolean handleCommand(Intent intent) {
-        if (intent == null || intent.getAction() == null)
-            return false;
-        int seq = intent.getIntExtra("seq", -1);
-        String action = intent.getAction();
-        setIntent(new Intent(this, MainActivity.class)); // consumed
-        switch (action) {
-            case ACTION_SCAN:
-                startSearch(seq);
-                return true;
-            case ACTION_UPDATE:
-                loadPushedFirmware();
-                updateSeq = seq;
-                pendingUpdateAddress = intent.getStringExtra("address");
-                if (localFirmware == null) {
-                    status.write(seq, "failed", 0, "No firmware on the phone.", null);
-                    return true;
-                }
-                startSearch(-1); // the update starts once the controller is found
-                return true;
-            default:
-                return false;
-        }
     }
 
     /* ---------------------------- controllers --------------------------- */
@@ -204,25 +147,22 @@ public class MainActivity extends AppCompatActivity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(requestCode, permissions, results);
         if (requestCode == REQUEST_PERMISSION && hasBluetoothPermission())
-            startSearch(scanSeq);
+            startSearch();
     }
 
-    private void startSearch(int seq) {
-        scanSeq = seq;
+    private void startSearch() {
         if (!hasBluetoothPermission()) {
             controllerStatus.setText("Allow nearby devices access to find the controller.");
-            status.write(seq, "failed", 0, "Bluetooth permission missing.", null);
             return;
         }
         BluetoothManager manager = getSystemService(BluetoothManager.class);
         BluetoothAdapter adapter = manager == null ? null : manager.getAdapter();
         if (adapter == null || !adapter.isEnabled()) {
             controllerStatus.setText("Turn Bluetooth on, then search again.");
-            status.write(seq, "failed", 0, "Bluetooth is off.", null);
             return;
         }
         if (searching)
-            return; // the running search reports to the latest seq when it ends
+            return;
 
         searching = true;
         controllers.clear();
@@ -241,7 +181,6 @@ public class MainActivity extends AppCompatActivity {
         searchProgress.setVisibility(View.VISIBLE);
         searchButton.setEnabled(false);
         controllerStatus.setText("Looking for your controller...");
-        status.write(seq, "scanning", 0, "Looking for paired controllers...", null);
         refreshUpdateCard();
         probeNext();
     }
@@ -274,37 +213,7 @@ public class MainActivity extends AppCompatActivity {
         controllerStatus.setText(controllers.isEmpty()
             ? "No controller found. Switch it on and pair it: Bluetooth settings > Scan > tap it > Pair."
             : controllers.size() == 1 ? "Connected." : controllers.size() + " controllers found. Choose one.");
-        status.write(scanSeq, "scan_done", 0, controllerStatus.getText().toString(), controllersJson());
         refreshUpdateCard();
-
-        if (pendingUpdateAddress != null) {
-            Controller target = controllers.get(pendingUpdateAddress);
-            String address = pendingUpdateAddress;
-            pendingUpdateAddress = null;
-            if (target == null)
-                status.write(updateSeq, "failed", 0, "Controller " + address + " not found by the phone.", null);
-            else if (!localFirmware.fitsBoard(target.board))
-                status.write(updateSeq, "failed", 0, "The file is for " + Board.displayName(localFirmware.board)
-                    + ", the controller is " + Board.displayName(target.board) + ".", null);
-            else
-                startUpdate(target, localFirmware);
-        }
-    }
-
-    private JSONArray controllersJson() {
-        JSONArray list = new JSONArray();
-        for (Controller c : controllers.values()) {
-            try {
-                JSONObject item = new JSONObject();
-                item.put("name", c.device.getName());
-                item.put("address", c.device.getAddress());
-                item.put("version", c.version);
-                item.put("board", c.board);
-                list.put(item);
-            } catch (Exception ignored) {
-            }
-        }
-        return list;
     }
 
     private void addController(BluetoothDevice device, String version, String board) {
@@ -361,17 +270,6 @@ public class MainActivity extends AppCompatActivity {
             setLocalFirmware(readAll(in), displayName(uri));
         } catch (Exception e) {
             statusText.setText("Could not read the file: " + e.getMessage());
-        }
-    }
-
-    private void loadPushedFirmware() {
-        File pushed = new File(getExternalFilesDir(null), PUSHED_FIRMWARE);
-        if (!pushed.isFile())
-            return;
-        try (InputStream in = new FileInputStream(pushed)) {
-            setLocalFirmware(readAll(in), "From the PC");
-        } catch (Exception e) {
-            statusText.setText("Could not read the file from the PC: " + e.getMessage());
         }
     }
 
@@ -481,7 +379,6 @@ public class MainActivity extends AppCompatActivity {
             .setMessage("Install " + (target == null ? "the firmware" : "v" + target) + " on " + controller.device.getName()
                 + "?\n\nKeep the phone close and the controller powered until it restarts, about a minute and a half.")
             .setPositiveButton("Update", (d, w) -> {
-                updateSeq = -1;
                 if (localFirmware != null)
                     startUpdate(controller, localFirmware);
                 else
@@ -533,16 +430,13 @@ public class MainActivity extends AppCompatActivity {
         updateProgress.setProgressCompat(0, false);
         progressText.setText("");
         statusText.setText("");
-        int seq = updateSeq;
         String version = firmware.version;
-        status.write(seq, "updating", 0, "Connecting...", null);
         ota = new OtaClient(this, controller.device, firmware.bytes, new OtaClient.Listener() {
             @Override
             public void onProgress(int sent, int total) {
                 int percent = (int) (100L * sent / total);
                 updateProgress.setProgressCompat(percent, true);
                 progressText.setText("Sending  " + sent / 1024 + " / " + total / 1024 + " KB");
-                status.write(seq, "updating", percent, "Sending firmware...", null);
             }
 
             @Override
@@ -553,7 +447,6 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onFinished(boolean success, String message) {
                 getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                status.write(seq, success ? "done" : "failed", success ? 100 : 0, message, null);
                 ota = null;
                 updateProgress.setVisibility(View.GONE);
                 progressText.setText("");

@@ -1,13 +1,24 @@
-# arduino-cli build profile. Pins the core and library versions the
-# firmware is tested with, so a build is reproducible anywhere:
+# arduino-cli build profiles. They pin the core and library versions the
+# firmware is tested with, so a build is reproducible anywhere. One profile
+# per chip; the XIAO ESP32C3 with an RGB LED also needs its board flag:
 #
 #   arduino-cli compile --profile xiao_esp32c3 ArduinoCode/MotoButtons2
+#   arduino-cli compile --profile xiao_esp32c3 --build-property "compiler.cpp.extra_flags=-DMB_BOARD_ESP32C3" ArduinoCode/MotoButtons2
+#   arduino-cli compile --profile xiao_esp32c6 ArduinoCode/MotoButtons2
 #
 # The Arduino IDE 2 ships arduino-cli at
 #   <IDE folder>/resources/app/lib/backend/resources/arduino-cli.exe
 profiles:
   xiao_esp32c3:
     fqbn: esp32:esp32:XIAO_ESP32C3
+    platforms:
+      - platform: esp32:esp32 (3.3.8)
+        platform_index_url: https://espressif.github.io/arduino-esp32/package_esp32_index.json
+    libraries:
+      - NimBLE-Arduino (2.5.0)
+      - U8g2 (2.36.19)
+  xiao_esp32c6:
+    fqbn: esp32:esp32:XIAO_ESP32C6
     platforms:
       - platform: esp32:esp32 (3.3.8)
         platform_index_url: https://espressif.github.io/arduino-esp32/package_esp32_index.json

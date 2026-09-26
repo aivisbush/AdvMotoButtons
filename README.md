@@ -1,9 +1,22 @@
 # Bush's Moto Buttons v2.1
 ### Thanks to [the original author](https://github.com/joncox123/MotoButtons2/tree/main) for free sourcing this amazing piece of art, especially the dev board wiring and the code part! So, I needed some modifications to it to move forward to perfection. To continue supporting enduro, offroad, adventure enthusiasts who can also tinker with electronics, and build a relatively inexpensive alternative to moto buttons, I also want to share my work.
 
-A handlebar Bluetooth controller for motorcycle navigation. An **ESP32-C3 OLED Mini** board with a
-5-way joystick and three buttons presents itself as a Bluetooth keyboard and drives DMD2, OsmAnd, Locus
-Map or a media player, showing what it is doing on the board's 72x40 OLED.
+A handlebar Bluetooth controller for motorcycle navigation. A small board with a 5-way joystick and
+three buttons presents itself as a Bluetooth keyboard and drives DMD2, OsmAnd, Locus Map or a media
+player.
+
+### Boards
+| Board | Indicator | Firmware | Bluetooth update |
+|---|---|---|---|
+| **ESP32-C3 OLED Mini** (main build) | 72x40 OLED + status LED | [ArduinoCode/MotoButtons2](ArduinoCode/MotoButtons2) | yes, from the phone |
+| **Seeed XIAO ESP32C3** | RGB LED | [ArduinoCode/MotoButtons2](ArduinoCode/MotoButtons2) (board flag) | yes, from the phone |
+| **Seeed XIAO ESP32C6** | RGB LED | [ArduinoCode/MotoButtons2](ArduinoCode/MotoButtons2) | yes, from the phone |
+| **Seeed XIAO nRF52840** | RGB LED | [ArduinoCode/MotoButtonsNRF](ArduinoCode/MotoButtonsNRF) | not yet (USB only) |
+
+The three ESP32 boards share one sketch; [Programming](Programming/README.md) says how to pick the
+board. The User Manual below describes the ESP32-C3 OLED build; the others are under
+[XIAO ESP32C3 and ESP32C6 builds](#xiao-esp32c3-and-esp32c6-builds) and
+[nRF52840 build](#nrf52840-build).
 
 ### My changes against the original
 - Runs on the ESP32-C3 OLED Mini instead of the nRF52840. The onboard OLED replaces the RGB LED as
@@ -30,6 +43,8 @@ Map or a media player, showing what it is doing on the board's 72x40 OLED.
 - ESP32-C3 OLED Mini (an ESP32-C3 with a 0.42" 72x40 SSD1306 OLED on board)
 - 3x waterproof buttons (I used V12B-10N-A)
 - 5-way joystick (I used JS5208)
+- or, for the RGB LED builds: Seeed XIAO ESP32C3, ESP32C6 or nRF52840 and an RGB LED, common **anode only** (I used
+  OSTAMA5B31A; a common cathode LED burned two boards)
 - 3D printed case with some screws (the case is waterproof enough to hold rain and some submersion. I've already been using it for 1 year, no issues. But use some super glue on the TPU gasket and glue gun around holes from inside). All TPU and PETG (or alternative filament) STLs are in 3D folder.
 
 <img src="3D/Parts.png" alt="Parts" width="600"/>
@@ -98,21 +113,20 @@ DMD Manage belongs to THORK Racing and is not part of this repository. Download 
 [Manage App page](https://docs.dmdnavigation.com/otherapps/manage-app/) (tested: version 3.06,
 `DMD_Manage_v3_06.apk`, SHA-256 `1e0e469bc905de8e6eabf3d10b48e6cbe32b64e87b900b0c1133acd491992188`).
 
-The easiest way is the [Moto Buttons Tool](#moto-buttons-tool-windows) (*Install DMD support*): it
-downloads DMD Manage, installs it over USB and switches everything on. Installing from the phone itself
-is blocked by Google Play Protect (on Samsung it ends in "App not installed"); `adb install` skips that
-check.
-
-By hand instead:
-1. On the phone enable *Developer options* -> *USB debugging* and connect it by USB; allow the PC when
-   asked. Run `adb install DMD_Manage_v3_06.apk` (`adb` comes with Android SDK Platform Tools).
-2. Open DMD Manage and switch on its **Accessibility** service. The *Display over other apps* request is
+The [setup page](#updating-from-the-phone-no-pc) (step 2) walks through installing it from the phone:
+Google Play Protect blocks it when downloaded in a browser, so scanning is switched off for the
+install and back on afterwards, and Android 13+ also needs *Allow restricted settings* for it.
+Then:
+1. Open DMD Manage and switch on its **Accessibility** service. The *Display over other apps* request is
    for the BMW controller overlay and can be skipped.
-3. Pair the controller (`DMD-Remote3`) and press any button on the Controller Detection screen; it shows
+2. Pair the controller (`DMD-Remote3`) and press any button on the Controller Detection screen; it shows
    *DMD Remote3*.
-4. Set DMD Manage's battery use to *Unrestricted* so Samsung does not freeze it.
+3. Set DMD Manage's battery use to *Unrestricted* so Samsung does not freeze it.
 
-Either way, then:
+With a PC instead: enable *USB debugging* and run `adb install DMD_Manage_v3_06.apk` (`adb` comes
+with Android SDK Platform Tools); Play Protect does not check adb installs.
+
+In DMD2:
 1. In DMD2 add the device as **Remote 3** and assign each function by pressing the button - Remote 3
    starts with an empty map. *Back / Locations* returns to your position after panning (*Map Follow
    Toggle* opens the point menu instead). Double tap works only on the keys set as *Long Press - Remote
@@ -132,58 +146,42 @@ with. The page walks through three steps:
    (DMD Manage stays).
 
 The controller needs firmware 2.2.0 or newer for Bluetooth updates; older ones are flashed once by USB.
+The nRF52840 build has no Bluetooth update yet, so the app does not list it.
 The app tells the boards apart (ESP32-C3 OLED, ESP32-C3, ESP32-C6, nRF52840) by the product ID in the
 controller's Bluetooth PnP ID and only offers that board's firmware. Its menu has **Beta firmware** to
-also offer newer beta releases.
+also offer newer beta releases, and **Use a .bin file** installs a firmware file saved on the phone
+(the app image `MotoButtons2.ino.bin`, not the merged one). The first firmware with the update service
+has to be flashed by USB once, and every phone must then forget and re-pair the controller.
 
 ### Publishing releases
 The site is the `gh-pages` branch (Settings > Pages > Deploy from a branch > `gh-pages` / root). A tag
-on a board's branch builds, checks and publishes that board's firmware
-([release.yml](.github/workflows/release.yml)):
+builds, checks and publishes one board's firmware ([release.yml](.github/workflows/release.yml)):
 
 | Tag | Publishes |
 |---|---|
 | `esp32c3-oled/v2.4.1` | production firmware 2.4.1 for the ESP32-C3 OLED board |
 | `esp32c3-oled/v2.4.2-beta.1` | beta firmware; the app offers it only with *Beta firmware* on |
+| `esp32c3/v2.5.0`, `esp32c6/v2.5.0` | firmware for the XIAO ESP32C3 / ESP32C6 boards |
+| `nrf52840/v2.2.0` | nRF52840 firmware, as a GitHub Release only (`.zip` DFU package and `.hex`) |
 | `app/v1.4` | the Android app (`moto-buttons.apk`) |
 
-1. Set the version in [config.h](ArduinoCode/MotoButtons2/config.h) (`FIRMWARE_VERSION_TAG`, e.g.
-   `MBFWVER=2.4.1` or `MBFWVER=2.4.2-beta.1`), commit and push the branch.
+1. Set the version in the board's sketch (`FIRMWARE_VERSION_TAG`, e.g. `MBFWVER=2.4.1` or
+   `MBFWVER=2.4.2-beta.1`; ESP32 boards share it in [config.h](ArduinoCode/MotoButtons2/config.h), nRF52840 at the top
+   of [MotoButtonsNRF.ino](ArduinoCode/MotoButtonsNRF/MotoButtonsNRF.ino)), commit and push.
 2. Tag and push: `git tag esp32c3-oled/v2.4.1` then `git push origin esp32c3-oled/v2.4.1`.
-3. The workflow builds with the branch's `release.json` (board, sketch, arduino-cli profile), refuses
-   a tag that does not match the version and board inside the `.bin`, adds it to `gh-pages`
-   (`firmware/<board>/<prod|beta>/`, `firmware/latest.json`) and creates a GitHub Release.
+3. The workflow looks the board up in [release.json](release.json) (sketch, arduino-cli profile,
+   compiler `flags`, `ota`),
+   builds it, refuses a tag that does not match the version inside the build and creates a GitHub
+   Release. Boards with `"ota": true` are also added to `gh-pages` (`firmware/<board>/<prod|beta>/`,
+   `firmware/latest.json`), where the app finds them.
 
-Each board's branch needs its own `release.json` and `BOARD_ID_TAG` / `BOARD_PRODUCT_ID` in `config.h`
-(esp32c3-oled 0x4001, esp32c3 0x4002, esp32c6 0x4003, nrf52840 0x4004), plus the Bluetooth update
-service (`ota.cpp`). For `app/` tags the repository needs two secrets (Settings > Secrets and variables >
+Board ids and the product IDs the firmware reports: esp32c3-oled 0x4001, esp32c3 0x4002, esp32c6
+0x4003, nrf52840 0x4004 (`BOARD_ID_TAG` / `BOARD_PRODUCT_ID`). A new board needs an entry in
+`release.json`. For `app/` tags the repository needs two secrets (Settings > Secrets and variables >
 Actions): `ANDROID_KEYSTORE_BASE64` (the release key, `base64 -w0 release.jks`) and
 `ANDROID_KEYSTORE_PASSWORD`. Locally, `site/tools/publish.py --site <gh-pages checkout> --firmware <bin>
 --channel prod|beta` does the same by hand. Keep the signing key (`%USERPROFILE%\.motobuttons\`) backed
 up: app updates must be signed with the same key.
-
-### Moto Buttons Tool (Windows)
-A single portable `MotoButtonsTool.exe` (no install; Windows 10/11) that sets up a phone over USB and
-updates the controller's firmware. Build it with `Apps\Windows\build.ps1` after building the Android
-app (`Apps\Android`: `gradlew assembleDebug`). On first use it downloads Google's platform tools (adb)
-into a `MotoButtonsTool_data` folder next to the exe.
-
-Connect the phone by USB with USB debugging on, allow the PC, then go through the steps:
-1. **Check phone** - finds the phone and shows what is installed.
-2. **Install DMD support** - downloads DMD Manage from THORK Racing, installs it and turns on its
-   accessibility service and background use. No taps on the phone needed.
-3. **Pair the controller** - opens Bluetooth settings on the phone: tap *Scan*, tap `DMD-Remote3`, tap
-   *Pair*. Press the button again to check. Unpair first if the controller was paired before a firmware
-   that added a Bluetooth service.
-4. **Install Moto Buttons app** - the phone app that sends firmware to the controller.
-5. **Controller firmware** - choose the firmware `.bin` (the app image `MotoButtons2.ino.bin`, not the
-   merged one). It is copied to the phone and the Moto Buttons app opens: check the controller is
-   selected, tap *Update firmware* and confirm. About 90 s; the controller restarts and reconnects.
-
-The phone app can also update from any `.bin` saved on the phone (*Choose firmware file*). It lists
-only paired controllers that have the Moto Buttons update service, with their firmware version. The
-first firmware with the update service (2.2.0) has to be flashed by USB once, and every phone must
-then forget and re-pair the controller.
 
 ### Button chords
 | Buttons | Hold | Action |
@@ -232,7 +230,29 @@ additional phone, either wait for that open window or do a factory reset (A+B+C 
 everything again. If a phone refuses to connect after a factory reset, forget the controller on the
 phone and pair afresh.
 
+### XIAO ESP32C3 and ESP32C6 builds
+Same firmware as the OLED build, with an RGB LED instead of the display:
+- LED: orange while starting, blinking blue while waiting for a phone, steady mode colour once
+  connected (DMD2 blue, OsmAnd green, Locus orange, Media magenta), one long blink on a mode change
+- **A+B** held switches the steady colour off and on (the blinking and flashes stay)
+- Orientation: as on the OLED build; the LED flashes orange 1 to 4 times to confirm
+- **A+B+C** for 5 s: factory reset, 4 orange flashes. **A+C** for 5 s restarts
+- Buttons and joystick switch to 3V3; on the C3 the joystick centre switches to GND
+
+### nRF52840 build
+Same modes and Bluetooth name (`DMD-Remote3`); differences from the ESP32-C3 OLED build:
+- DMD2 mode sends `F8` for the joystick centre (map it in DMD2's Remote 3 settings like the rest)
+- **A+B** held changes the LED brightness; the dimmest step is off and pauses 1.5 s so it is easy to
+  release
+- Orientation: hold a joystick direction while powering on; the LED flashes 1 to 4 times to confirm
+- LED: blinking blue while waiting for a phone, steady mode colour once connected (DMD2 blue, OsmAnd
+  green, Locus orange, Media magenta), one long blink on a mode change
+- **A+B+C** for 5 s clears the Bluetooth bonds and settings; no restart chord
+- If an upload fails, double tap the reset button next to the USB-C connector (see
+  [Programming](Programming/README.md))
+
 ## Wiring
+### ESP32-C3 OLED Mini
 GPIO numbers, not Arduino `D` aliases. All button commons go to GND.
 
 ```
@@ -244,17 +264,52 @@ GPIO4  joystick LEFT             (strapping)
 ```
 
 If something is unclear, please read [the original author's manuals](https://github.com/joncox123/MotoButtons2/tree/main/ConstructionGuide).
-The diagram below is still the original nRF52840 drawing, hand-annotated for the C3 pins above.
+The diagram below is the original nRF52840 drawing, hand-annotated for the C3 pins above.
+
+### Seeed XIAO ESP32C3
+XIAO `D` pins. Buttons and joystick switch to 3V3, the joystick centre to GND; RGB LED common anode.
+D8 (DOWN) and D9 (CENTER) are strapping pins: do not hold them while powering on or uploading.
+
+```
+D0  LED red         D4  joystick LEFT    D8  joystick DOWN
+D1  button C        D5  button A         D9  joystick CENTER
+D2  button B        D6  LED blue         D10 joystick RIGHT
+D3  joystick UP     D7  LED green
+```
+
+### Seeed XIAO ESP32C6
+XIAO `D` pins. Buttons and joystick switch to 3V3; RGB LED common anode. Joystick names are the
+directions with the three buttons on the right.
+
+```
+D0  LED red         D4  joystick LEFT    D8  joystick DOWN
+D1  LED green       D5  button A         D9  joystick CENTER
+D2  LED blue        D6  button B         D10 joystick RIGHT
+D3  joystick UP     D7  button C
+```
+
+### Seeed XIAO nRF52840
+Pin numbers are the XIAO `D` pins. Buttons and joystick switch to 3V3 (internal pull-downs); the RGB
+LED is common anode.
+
+```
+D0  LED red         D4  joystick UP      D8  joystick LEFT
+D1  LED blue        D5  button A         D9  joystick CENTER
+D2  LED green       D6  button B         D10 joystick DOWN
+D3  joystick RIGHT  D7  button C
+```
 
 <img src="Wiring/Wiring_Diagram_MotoButtons2_analog_mod.png" alt="Wiring Diagram" width="600"/>
 
 ## Code
-See the [programming instructions](Programming/README.md). The sketch is split into units; every
+See the [programming instructions](Programming/README.md). The ESP32 sketch (all three ESP32 boards,
+per-board pins in `board_*.h`) is split into units; every
 tunable (pins, timings, key codes, Bluetooth name, debug switches) is in
 [config.h](ArduinoCode/MotoButtons2/config.h), and the key tables are in
 [keymap.cpp](ArduinoCode/MotoButtons2/keymap.cpp). Firmware updates over Bluetooth are in
-[ota.cpp](ArduinoCode/MotoButtons2/ota.cpp); the phone app is in [Apps/Android](Apps/Android) and the
-Windows tool in [Apps/Windows](Apps/Windows).
+[ota.cpp](ArduinoCode/MotoButtons2/ota.cpp); the phone app is in [Apps/Android](Apps/Android). The nRF52840
+sketch is one file, [MotoButtonsNRF.ino](ArduinoCode/MotoButtonsNRF/MotoButtonsNRF.ino), with its
+settings at the top.
 
 ## References
 - https://github.com/sigmdel/mini_esp32c3_oled_sketches

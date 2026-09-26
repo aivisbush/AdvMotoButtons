@@ -3,12 +3,13 @@
 
  Everything a builder may want to tune lives here: pins, timings,
  thresholds, HID codes and the Bluetooth identity. Behaviour lives in the
- other units of the sketch:
+ other units of the sketch, and board_*.h hold what differs per board:
 
    inputs.*    reading and debouncing the eight inputs, orientation
    keymap.*    per-mode key tables and the HID report engine
    chords.*    button combinations (mode, display, restart, reset)
-   oled.*      the 72x40 status display
+   oled.*      the 72x40 status display (OLED board only)
+   led.*       status LED or RGB LED
    ble_hid.*   Bluetooth HID keyboard and consumer control
    settings.*  persistent settings in NVS
    debug.h     serial logging helpers
@@ -19,16 +20,26 @@
 
 // Shown on the boot screen and printed to serial at start-up. The tag
 // prefix lets the update tools read the version straight from the .bin.
-constexpr char FIRMWARE_VERSION_TAG[] = "MBFWVER=2.4.0";
+constexpr char FIRMWARE_VERSION_TAG[] = "MBFWVER=2.5.0";
 constexpr const char *FIRMWARE_VERSION = FIRMWARE_VERSION_TAG + 8;
 
-/* Which board this build is for, so the update app picks the right .bin.
- * The phone reads it as the product ID of the Bluetooth PnP ID; the tag
- * marks the .bin itself. One pair per board:
- *   esp32c3-oled 0x4001   esp32c3 0x4002   esp32c6 0x4003   nrf52840 0x4004
+/*------------------------------ BOARD -------------------------------*/
+/* One sketch, several boards. The ESP32-C3 OLED Mini is the default;
+ * the XIAO ESP32C6 is picked by its board setting. For the XIAO ESP32C3
+ * with an RGB LED, uncomment the next line (release builds pass it as a
+ * compiler flag instead).
  */
-constexpr char BOARD_ID_TAG[] = "MBBOARD=esp32c3-oled";
-constexpr uint16_t BOARD_PRODUCT_ID = 0x4001;
+// #define MB_BOARD_ESP32C3
+
+constexpr uint8_t PIN_NONE = 0xFF;
+
+#if defined(ARDUINO_XIAO_ESP32C6) || defined(MB_BOARD_ESP32C6)
+#include "board_esp32c6.h"
+#elif defined(MB_BOARD_ESP32C3)
+#include "board_esp32c3.h"
+#else
+#include "board_esp32c3_oled.h"
+#endif
 
 /*------------------------------ DEBUG -------------------------------*/
 // General serial logging at 115200 baud. Output is dropped while no USB
@@ -44,39 +55,21 @@ constexpr bool DEBUG = true;
 constexpr bool DEBUG_INPUTS = false;
 constexpr uint16_t DEBUG_INPUTS_SNAPSHOT_MS = 1000;
 
-/*------------------------- HARDWARE PIN MAP -------------------------*/
-/* ESP32-C3 OLED Mini board labels match raw GPIO numbers. GPIO numbers
- * are used instead of Arduino D aliases because the aliases move between
- * board profiles.
- *
- * GPIO2, GPIO8 and GPIO9 are ESP32-C3 boot strapping pins. GPIO2 (RIGHT)
- * must be high and GPIO9 (button B) selects download mode when low, so
- * neither may be held while power is applied. Orientation is therefore
- * chosen in a window after boot, never during power-up.
- *
- * Only GPIO0..GPIO4 reach ADC1, which is exactly the joystick.
- * GPIO20 = RX and GPIO21 = TX are left free.
- */
-constexpr uint8_t PIN_JOYSTICK_UP = 0;
-constexpr uint8_t PIN_JOYSTICK_CENTER = 1;
-constexpr uint8_t PIN_JOYSTICK_RIGHT = 2;    // strapping pin
-constexpr uint8_t PIN_JOYSTICK_DOWN = 3;
-constexpr uint8_t PIN_JOYSTICK_LEFT = 4;
-constexpr uint8_t PIN_OLED_SDA = 5;          // reserved by the onboard OLED
-constexpr uint8_t PIN_OLED_SCL = 6;          // reserved by the onboard OLED
-constexpr uint8_t PIN_BUTTON_A = 7;
-constexpr uint8_t PIN_STATUS_LED = 8;        // onboard LED, strapping pin
-constexpr uint8_t PIN_BUTTON_B = 9;          // strapping pin
-constexpr uint8_t PIN_BUTTON_C = 10;
-
-// All button commons are wired to GND: every input is active low.
-
 /*---------------------------- STATUS LED ----------------------------*/
-constexpr bool STATUS_LED_ACTIVE_LOW = true;
+// Single LED (OLED board): breathes while waiting, dim once connected.
 constexpr uint16_t STATUS_LED_PULSE_PERIOD_MS = 1200;
 // Brightness once a phone is connected (0..255). Full brightness is a
 // distraction at night.
 constexpr uint8_t STATUS_LED_CONNECTED_BRIGHTNESS = 12;
+
+/* RGB LED (boards without OLED), common anode. Blinks blue while waiting
+ * for a phone, shows the mode colour once connected, blinks long on a mode
+ * change. A+B switches the steady colour off and on.
+ */
+constexpr uint8_t RGB_LED_BRIGHTNESS = 255;
+constexpr uint16_t RGB_LED_WAITING_BLINK_MS = 200;
+constexpr uint16_t RGB_LED_MODE_BLINK_MS = 600;
+constexpr uint16_t RGB_LED_FLASH_MS = 250;
 
 /*--------------------------- INPUT TIMING ---------------------------*/
 /* Debounce: a reading must hold this long before it becomes the state.

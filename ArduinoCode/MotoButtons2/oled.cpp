@@ -441,8 +441,14 @@ static void renderText(const char *text, bool showBar, const uint8_t *font)
 }
 
 /*------------------------------- API --------------------------------*/
+// Boards without the display keep it disabled, so every call is a no-op.
 void oledBegin(bool enabledSetting, uint8_t contrast)
 {
+  if (!BOARD_HAS_OLED)
+  {
+    enabled = false;
+    return;
+  }
   oled.begin();
   normalContrast = contrast;
   oled.setContrast(contrast);
@@ -455,6 +461,8 @@ void oledBegin(bool enabledSetting, uint8_t contrast)
 
 void oledSetEnabled(bool on)
 {
+  if (!BOARD_HAS_OLED)
+    return;
   enabled = on;
   invalidate();
 
@@ -508,6 +516,8 @@ void oledClearTransient()
 
 void oledOnConnected()
 {
+  if (!BOARD_HAS_OLED)
+    return;
   oledShowTransient(TEXT_CONNECTED, OLED_TRANSIENT_MS, OLED_PRIORITY_NORMAL, connectionFont());
   // The splash follows the "Connected" message, the first time only.
   splashPending = !splashShownThisBoot;

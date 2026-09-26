@@ -1,5 +1,25 @@
 {
-  "board": "esp32c3-oled",
-  "sketch": "ArduinoCode/MotoButtons2",
-  "profile": "xiao_esp32c3"
+  "boards": {
+    "esp32c3-oled": {
+      "sketch": "ArduinoCode/MotoButtons2",
+      "profile": "xiao_esp32c3",
+      "ota": true
+    },
+    "esp32c3": {
+      "sketch": "ArduinoCode/MotoButtons2",
+      "profile": "xiao_esp32c3",
+      "flags": "-DMB_BOARD_ESP32C3",
+      "ota": true
+    },
+    "esp32c6": {
+      "sketch": "ArduinoCode/MotoButtons2",
+      "profile": "xiao_esp32c6",
+      "ota": true
+    },
+    "nrf52840": {
+      "sketch": "ArduinoCode/MotoButtonsNRF",
+      "profile": "nrf52840",
+      "ota": false
+    }
+  }
 }

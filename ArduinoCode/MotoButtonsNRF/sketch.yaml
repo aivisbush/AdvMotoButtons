@@ -1,0 +1,11 @@
+# arduino-cli build profile for the XIAO nRF52840 board:
+#
+#   arduino-cli compile --profile nrf52840 ArduinoCode/MotoButtonsNRF
+#
+# Bluefruit and TinyUSB come with the Seeed core.
+profiles:
+  nrf52840:
+    fqbn: Seeeduino:nrf52:xiaonRF52840Sense
+    platforms:
+      - platform: Seeeduino:nrf52 (1.1.12)
+        platform_index_url: https://files.seeedstudio.com/arduino/package_seeeduino_boards_index.json

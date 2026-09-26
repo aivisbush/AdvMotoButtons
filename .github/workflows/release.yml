@@ -2,9 +2,10 @@
 #   <board>/v<version>          production firmware, e.g. esp32c3-oled/v2.4.0
 #   <board>/v<version>-beta.N   beta firmware,       e.g. esp32c3-oled/v2.4.1-beta.1
 #   app/v<version>              Android app,         e.g. app/v1.3
-# Firmware is built from the tagged commit using that branch's release.json, checked
-# against the tag, added to the gh-pages branch (the GitHub Pages site) and attached to
-# a GitHub Release. The app needs the secrets ANDROID_KEYSTORE_BASE64 and
+# Firmware is built from the tagged commit with the board's entry in release.json and
+# checked against the tag. Boards with "ota": true are added to the gh-pages branch (the
+# GitHub Pages site, where the phone app finds them); every build is attached to a
+# GitHub Release (nRF52840: the .zip DFU package and the .hex). The app needs the secrets ANDROID_KEYSTORE_BASE64 and
 # ANDROID_KEYSTORE_PASSWORD (see README, Publishing releases).
 name: Release
 
@@ -34,32 +35,49 @@ jobs:
           version="${tag#*/v}"
           channel=prod
           case "$version" in *-beta*) channel=beta ;; esac
-          cfg_board=$(jq -r .board release.json)
-          if [ "$board" != "$cfg_board" ]; then
-            echo "::error::Tag board '$board' does not match release.json board '$cfg_board' on this branch"; exit 1
+          entry=$(jq -c --arg b "$board" '.boards[$b] // empty' release.json)
+          if [ -z "$entry" ]; then
+            echo "::error::Board '$board' is not in release.json (known: $(jq -r '.boards | keys | join(", ")' release.json))"; exit 1
           fi
           echo "board=$board" >> "$GITHUB_OUTPUT"
           echo "version=${version%%-beta*}" >> "$GITHUB_OUTPUT"
           echo "fullversion=$version" >> "$GITHUB_OUTPUT"
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
-          echo "sketch=$(jq -r .sketch release.json)" >> "$GITHUB_OUTPUT"
-          echo "profile=$(jq -r .profile release.json)" >> "$GITHUB_OUTPUT"
+          echo "sketch=$(jq -r .sketch <<< "$entry")" >> "$GITHUB_OUTPUT"
+          echo "profile=$(jq -r .profile <<< "$entry")" >> "$GITHUB_OUTPUT"
+          echo "ota=$(jq -r '.ota // false' <<< "$entry")" >> "$GITHUB_OUTPUT"
+          echo "flags=$(jq -r '.flags // ""' <<< "$entry")" >> "$GITHUB_OUTPUT"
 
       - uses: arduino/setup-arduino-cli@v2
 
       - name: Build firmware
         run: |
-          arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
-          arduino-cli compile --profile "${{ steps.meta.outputs.profile }}" --output-dir out "${{ steps.meta.outputs.sketch }}"
+          flags="${{ steps.meta.outputs.flags }}"
+          arduino-cli compile --profile "${{ steps.meta.outputs.profile }}" ${flags:+--build-property "compiler.cpp.extra_flags=$flags"} --output-dir out "${{ steps.meta.outputs.sketch }}"
           ls -l out
-          cp out/*.ino.bin "MotoButtons2-${{ steps.meta.outputs.board }}-${{ steps.meta.outputs.fullversion }}.bin"
+          name="MotoButtons2-${{ steps.meta.outputs.board }}-${{ steps.meta.outputs.fullversion }}"
+          mkdir dist
+          if ls out/*.ino.zip >/dev/null 2>&1; then
+            cp out/*.ino.zip "dist/$name.zip"
+            cp out/*.ino.hex "dist/$name.hex"
+            image=$(ls out/*.ino.elf)
+          else
+            cp out/*.ino.bin "dist/$name.bin"
+            image="dist/$name.bin"
+          fi
+          # The version in the code must match the tag.
+          built=$(grep -ao 'MBFWVER=[0-9A-Za-z.-]*' "$image" | head -1 | cut -d= -f2)
+          if [ "$built" != "${{ steps.meta.outputs.fullversion }}" ]; then
+            echo "::error::The firmware says version '$built', the tag says '${{ steps.meta.outputs.fullversion }}'"; exit 1
+          fi
 
       - name: Add to the site (gh-pages)
+        if: ${{ steps.meta.outputs.ota == 'true' }}
         run: |
           git fetch origin gh-pages
           git worktree add pages origin/gh-pages
           python3 site/tools/publish.py --site pages --template site \
-            --firmware "MotoButtons2-${{ steps.meta.outputs.board }}-${{ steps.meta.outputs.fullversion }}.bin" \
+            --firmware "dist/MotoButtons2-${{ steps.meta.outputs.board }}-${{ steps.meta.outputs.fullversion }}.bin" \
             --channel "${{ steps.meta.outputs.channel }}" \
             --expect-board "${{ steps.meta.outputs.board }}" --expect-version "${{ steps.meta.outputs.fullversion }}"
           cd pages
@@ -73,7 +91,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           prerelease: ${{ steps.meta.outputs.channel == 'beta' }}
-          files: MotoButtons2-*.bin
+          files: dist/*
 
   app:
     if: ${{ startsWith(github.ref_name, 'app/') }}

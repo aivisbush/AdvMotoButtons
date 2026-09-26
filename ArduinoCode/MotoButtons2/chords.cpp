@@ -4,6 +4,7 @@
 #include "settings.h"
 #include "keymap.h"
 #include "oled.h"
+#include "led.h"
 #include "ble_hid.h"
 #include "debug.h"
 
@@ -48,7 +49,8 @@ static void factoryReset()
   debugPrintf("Settings cleared: %d, BLE bonds cleared: %d\n", (int)settingsCleared, (int)bondsCleared);
 
   oledShowTransient("Reset done", OLED_TRANSIENT_MS, OLED_PRIORITY_HIGH);
-  delay(OLED_TRANSIENT_MS);
+  ledFlash(4);
+  ledWait(OLED_TRANSIENT_MS);
   ESP.restart();
 }
 
@@ -66,6 +68,7 @@ static void cycleMode(bool connected)
   debugPrintf("Mode advanced to %s\n", getModeName(settings.mode));
   keymapReleaseAll();
   settingsSave();
+  ledShowMode();
   // The mode screen shows the name when connected; say it anyway otherwise.
   if (!connected)
     oledShowTransient(getModeName(settings.mode), OLED_TRANSIENT_MS, OLED_PRIORITY_NORMAL);
@@ -76,8 +79,9 @@ static void toggleDisplay()
   settings.oledEnabled = !settings.oledEnabled;
   keymapReleaseAll();
   oledSetEnabled(settings.oledEnabled);
+  ledSetEnabled(settings.oledEnabled);
   settingsSave();
-  debugPrintf("OLED %s\n", settings.oledEnabled ? "enabled" : "disabled");
+  debugPrintf("Display %s\n", settings.oledEnabled ? "enabled" : "disabled");
 }
 
 void chordsUpdate(bool connected)

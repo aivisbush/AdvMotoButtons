@@ -4,34 +4,37 @@ on:
   push:
     paths:
       - "ArduinoCode/**"
+      - "release.json"
       - ".github/workflows/compile.yml"
   pull_request:
     paths:
       - "ArduinoCode/**"
+      - "release.json"
       - ".github/workflows/compile.yml"
   workflow_dispatch:
 
 jobs:
-  compile:
-    name: XIAO_ESP32C3 (esp32 3.3.8)
+  boards:
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
+      - id: list
+        run: echo "matrix=$(jq -c '[.boards | to_entries[] | {board: .key, sketch: .value.sketch, profile: .value.profile, flags: (.value.flags // "")}]' release.json)" >> "$GITHUB_OUTPUT"
 
-      - name: Compile sketch
-        uses: arduino/compile-sketches@v1
-        with:
-          fqbn: esp32:esp32:XIAO_ESP32C3
-          platforms: |
-            - name: esp32:esp32
-              source-url: https://espressif.github.io/arduino-esp32/package_esp32_index.json
-              version: 3.3.8
-          libraries: |
-            - name: NimBLE-Arduino
-              version: 2.5.0
-            - name: U8g2
-              version: 2.36.19
-          sketch-paths: |
-            - ArduinoCode/MotoButtons2
-          enable-warnings-report: true
-          verbose: false
+  compile:
+    needs: boards
+    name: ${{ matrix.board }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.boards.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Compile
+        run: |
+          flags="${{ matrix.flags }}"
+          arduino-cli compile --profile "${{ matrix.profile }}" --warnings default ${flags:+--build-property "compiler.cpp.extra_flags=$flags"} "${{ matrix.sketch }}"

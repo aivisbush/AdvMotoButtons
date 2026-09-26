@@ -28,16 +28,36 @@ static const uint8_t JOYSTICK_PINS[] = {
 };
 static const uint8_t JOYSTICK_PIN_COUNT = sizeof(JOYSTICK_PINS) / sizeof(JOYSTICK_PINS[0]);
 
-// Latched decision per joystick GPIO (0..4): the band between the two
-// thresholds keeps whatever the line last decided.
+// Latched decision per joystick line (JOYSTICK_PINS order): the band
+// between the two thresholds keeps whatever the line last decided.
 static bool joystickLatched[JOYSTICK_PIN_COUNT] = {false, false, false, false, false};
 
 static unsigned long lastActivityMs = 0;
 
-// On the ESP32-C3 only GPIO0..GPIO4 reach ADC1, which is exactly the joystick.
+static int8_t joystickIndex(uint8_t pin)
+{
+  for (uint8_t i = 0; i < JOYSTICK_PIN_COUNT; i++)
+  {
+    if (JOYSTICK_PINS[i] == pin)
+      return (int8_t)i;
+  }
+  return -1;
+}
+
+// True for joystick lines measured with the ADC.
 static bool isJoystickPin(uint8_t pin)
 {
-  return pin < JOYSTICK_PIN_COUNT;
+  return JOYSTICK_ADC && joystickIndex(pin) >= 0;
+}
+
+static bool pinActiveLow(uint8_t pin)
+{
+  return pin == PIN_JOYSTICK_CENTER ? CENTER_ACTIVE_LOW : BUTTONS_ACTIVE_LOW;
+}
+
+static void configureDigitalPin(uint8_t pin)
+{
+  pinMode(pin, pinActiveLow(pin) ? INPUT_PULLUP : INPUT_PULLDOWN);
 }
 
 /* Attaching the ADC to a pad clears its internal pull-up, so the pull-ups
@@ -46,6 +66,8 @@ static bool isJoystickPin(uint8_t pin)
  */
 static void assertJoystickPullups()
 {
+  if (!JOYSTICK_ADC)
+    return;
   for (uint8_t i = 0; i < JOYSTICK_PIN_COUNT; i++)
   {
     gpio_pullup_en((gpio_num_t)JOYSTICK_PINS[i]);
@@ -88,28 +110,37 @@ static uint16_t readJoystickMillivolts(uint8_t pin)
 static bool readJoystickPressed(uint8_t pin)
 {
   uint16_t millivolts = readJoystickMillivolts(pin);
+  bool &latched = joystickLatched[joystickIndex(pin)];
 
   if (millivolts <= JOYSTICK_PRESS_MV)
-    joystickLatched[pin] = true;
+    latched = true;
   else if (millivolts >= JOYSTICK_RELEASE_MV)
-    joystickLatched[pin] = false;
+    latched = false;
 
-  return joystickLatched[pin];
+  return latched;
 }
 
-// Joystick pins are decided by measured level, A/B/C by digital level.
+// Measured joystick lines are decided by level, the rest digitally.
 static bool readPressed(uint8_t pin)
 {
   if (isJoystickPin(pin))
     return readJoystickPressed(pin);
-  return digitalRead(pin) == LOW;
+  return digitalRead(pin) == (pinActiveLow(pin) ? LOW : HIGH);
+}
+
+// Pull-ups back on and settled before a scan of measured lines.
+static void prepareScan()
+{
+  if (!JOYSTICK_ADC)
+    return;
+  assertJoystickPullups();
+  delayMicroseconds(JOYSTICK_ADC_SETTLE_US);
 }
 
 // Takes the current readings as the state, with no press events.
 static void resetButtonStates()
 {
-  assertJoystickPullups();
-  delayMicroseconds(JOYSTICK_ADC_SETTLE_US);
+  prepareScan();
 
   unsigned long now = millis();
   for (uint8_t i = 0; i < BUTTON_COUNT; i++)
@@ -125,13 +156,17 @@ static void resetButtonStates()
 
 void inputsBegin(uint8_t orientation)
 {
-  pinMode(PIN_BUTTON_A, INPUT_PULLUP);
-  pinMode(PIN_BUTTON_B, INPUT_PULLUP);
-  pinMode(PIN_BUTTON_C, INPUT_PULLUP);
+  configureDigitalPin(PIN_BUTTON_A);
+  configureDigitalPin(PIN_BUTTON_B);
+  configureDigitalPin(PIN_BUTTON_C);
 
-  // The joystick pads are measured, not read digitally.
   for (uint8_t i = 0; i < JOYSTICK_PIN_COUNT; i++)
-    primeJoystickPin(JOYSTICK_PINS[i]);
+  {
+    if (JOYSTICK_ADC)
+      primeJoystickPin(JOYSTICK_PINS[i]);
+    else
+      configureDigitalPin(JOYSTICK_PINS[i]);
+  }
 
   inputsSetOrientation(orientation);
 }
@@ -155,8 +190,7 @@ static void logInputEvent(const Button &button, bool pressed, unsigned long prev
  */
 bool inputsUpdate()
 {
-  assertJoystickPullups();
-  delayMicroseconds(JOYSTICK_ADC_SETTLE_US);
+  prepareScan();
 
   unsigned long now = millis();
   bool anyChanged = false;
@@ -306,7 +340,7 @@ static void logInputSnapshot()
     const Button &button = buttons[i];
     if (isJoystickPin(button.pin))
     {
-      Serial.printf("%s=%c/%umV", button.name, joystickLatched[button.pin] ? 'P' : '-',
+      Serial.printf("%s=%c/%umV", button.name, joystickLatched[joystickIndex(button.pin)] ? 'P' : '-',
                     readJoystickMillivolts(button.pin));
     }
     else
@@ -340,7 +374,6 @@ void inputsDiagnosticsTick()
     return;
 
   lastSnapshotMs = millis();
-  assertJoystickPullups();
-  delayMicroseconds(JOYSTICK_ADC_SETTLE_US);
+  prepareScan();
   logInputSnapshot();
 }

@@ -1,10 +1,11 @@
 /*********************************************************************
 License: GNU GENERAL PUBLIC LICENSE; Version 3, 29 June 2007
 MotoButtons 2 - handlebar BLE HID controller for motorcycle navigation.
-Device: ESP32-C3 OLED Mini. Modes: DMD2, OsmAnd, Locus, Media.
+Devices: ESP32-C3 OLED Mini, XIAO ESP32C3, XIAO ESP32C6 (board_*.h).
+Modes: DMD2, OsmAnd, Locus, Media.
 
 This file holds setup() and loop() plus the board-level odds and ends
-(status LED, boot orientation window, watchdog). Everything else is in
+(boot orientation window, watchdog). Everything else is in
 the units listed in config.h.
 *********************************************************************/
 #include <Arduino.h>
@@ -18,12 +19,11 @@ the units listed in config.h.
 #include "keymap.h"
 #include "chords.h"
 #include "oled.h"
+#include "led.h"
 #include "ble_hid.h"
 #include "ota.h"
 
 // Prototypes, so setup() and loop() can come first.
-static void statusLedBegin();
-static void statusLedUpdate(bool connected);
 static void runOrientationWindow();
 static void watchdogBegin();
 static void logBootSummary();
@@ -34,7 +34,7 @@ void setup()
     Serial.begin(115200);
 
   settingsLoad();
-  statusLedBegin();
+  ledBegin();
   inputsBegin(settings.orientation);
   oledBegin(settings.oledEnabled, settings.oledContrast);
   oledShowBootScreen();
@@ -49,6 +49,8 @@ void setup()
 
   watchdogBegin();
   oledUpdate(bleConnected(), getModeName(settings.mode), true);
+  ledSetEnabled(settings.oledEnabled);
+  ledShowMode();
 }
 
 void loop()
@@ -74,7 +76,7 @@ void loop()
 
   bleUpdate();
   otaUpdate();
-  statusLedUpdate(connected);
+  ledUpdate(connected, settings.mode);
   inputsUpdate();
   if (DEBUG_INPUTS)
     inputsDiagnosticsTick();
@@ -85,55 +87,10 @@ void loop()
   delay(LOOP_TICK_MS);
 }
 
-/*---------------------------- status LED ----------------------------*/
-static void setStatusLed(uint8_t brightness)
-{
-  analogWrite(PIN_STATUS_LED, STATUS_LED_ACTIVE_LOW ? 255 - brightness : brightness);
-}
-
-static void statusLedBegin()
-{
-  pinMode(PIN_STATUS_LED, OUTPUT);
-  setStatusLed(0);
-}
-
-// Perceived brightness follows roughly the square of the duty cycle.
-static uint8_t gammaCorrect(uint8_t linear)
-{
-  uint16_t squared = (uint16_t)linear * linear;
-  return (uint8_t)((squared + 127) / 255);
-}
-
-// Breathing while waiting for a phone, dim and steady once connected.
-static void statusLedUpdate(bool connected)
-{
-  static int16_t lastBrightness = -1;
-
-  uint8_t brightness;
-  if (connected)
-  {
-    brightness = STATUS_LED_CONNECTED_BRIGHTNESS;
-  }
-  else
-  {
-    uint16_t phase = millis() % STATUS_LED_PULSE_PERIOD_MS;
-    uint16_t halfPeriod = STATUS_LED_PULSE_PERIOD_MS / 2;
-    uint16_t rise = phase < halfPeriod ? phase : STATUS_LED_PULSE_PERIOD_MS - phase;
-    brightness = gammaCorrect((uint8_t)((uint32_t)rise * 255 / halfPeriod));
-  }
-
-  if (brightness != lastBrightness)
-  {
-    setStatusLed(brightness);
-    lastBrightness = brightness;
-  }
-}
-
 /*------------------------ orientation window ------------------------*/
 /* Whichever joystick direction is held steadily during the first seconds
  * after boot becomes UP. The direction is pressed after the chip has
- * booted, so the strapping pins on RIGHT (GPIO2) and B (GPIO9) are never
- * held through power-up. Directions held from before power-up still
+ * booted, so strapping pins are never held through power-up. Directions held from before power-up still
  * count, since they are already down when the window opens.
  */
 static void runOrientationWindow()
@@ -168,6 +125,7 @@ static void runOrientationWindow()
         char message[40];
         snprintf(message, sizeof(message), "Orientation\nis set\nUP is %s", joystickPinName(pin));
         oledShowTransient(message, OLED_ORIENTATION_MESSAGE_MS, OLED_PRIORITY_HIGH);
+        ledFlash((uint8_t)(orientation + 1));
         debugPrintf("Boot orientation set to map %d; UP is %s%s\n", orientation, joystickPinName(pin),
                     changed ? "" : " (unchanged)");
       }
@@ -228,7 +186,7 @@ static const char *resetReasonName(esp_reset_reason_t reason)
 
 static void logBootSummary()
 {
-  debugPrintf("\nMotoButtons 2 v%s (ESP32-C3), BLE name \"%s\"\n", FIRMWARE_VERSION, BLE_DEVICE_NAME);
+  debugPrintf("\nMotoButtons 2 v%s (%s), BLE name \"%s\"\n", FIRMWARE_VERSION, BOARD_NAME, BLE_DEVICE_NAME);
   debugPrintf("Reset reason: %s\n", resetReasonName(esp_reset_reason()));
   debugPrintf("Mode %s, orientation %u, OLED %s, contrast %u\n", getModeName(settings.mode),
               settings.orientation, settings.oledEnabled ? "on" : "off", settings.oledContrast);

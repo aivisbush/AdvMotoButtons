@@ -45,10 +45,9 @@ Apps/Android/build/
 Apps/Android/app/build/
 Apps/Android/local.properties
 
-# Windows tool build output and its downloads (adb, DMD Manage)
-Apps/Windows/dist/
-MotoButtonsTool_data/
-
 # Site artifacts live on the gh-pages branch
 site/firmware/
 site/moto-buttons.apk
+
+# Build output the ESP32 core copies next to a sketch
+ArduinoCode/*/build/
