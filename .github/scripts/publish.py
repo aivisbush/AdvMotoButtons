@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Adds a firmware image (and optionally the Android app) to the Moto Buttons site.
 
-The site is the gh-pages branch: index.html, moto-buttons.apk and
+The site is the gh-pages branch, where index.html is edited; this adds
+moto-buttons.apk and
   firmware/<board>/<channel>/MotoButtons2-<version>.bin
   firmware/latest.json  {"boards": {"<board>": {"prod": {...}, "beta": {...}}}}
 Each entry: {"version", "file", "size", "md5"}. Other boards and channels are kept.
@@ -69,14 +70,10 @@ def main():
     parser.add_argument('--expect-board')
     parser.add_argument('--expect-version')
     parser.add_argument('--app')
-    parser.add_argument('--template', type=Path, help='copy index.html and icon.svg from this folder')
     args = parser.parse_args()
 
     args.site.mkdir(parents=True, exist_ok=True)
     (args.site / '.nojekyll').touch()
-    if args.template:
-        for name in ('index.html', 'icon.svg'):
-            shutil.copy2(args.template / name, args.site / name)
     if args.firmware:
         publish_firmware(args.site, args.firmware, args.channel, args.expect_board, args.expect_version)
     if args.app:

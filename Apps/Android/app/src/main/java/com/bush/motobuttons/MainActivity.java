@@ -70,11 +70,13 @@ public class MainActivity extends AppCompatActivity {
         final BluetoothDevice device;
         final String version;
         final String board;
+        final boolean canUpdate; // has the Bluetooth update service
 
-        Controller(BluetoothDevice device, String version, String board) {
+        Controller(BluetoothDevice device, String version, String board, boolean canUpdate) {
             this.device = device;
             this.version = version;
             this.board = board;
+            this.canUpdate = canUpdate;
         }
     }
 
@@ -199,9 +201,9 @@ public class MainActivity extends AppCompatActivity {
             searchFinished();
             return;
         }
-        ControllerProbe.probe(this, next, (device, isController, version, board) -> {
+        ControllerProbe.probe(this, next, (device, isController, version, board, canUpdate) -> {
             if (isController)
-                addController(device, version, board);
+                addController(device, version, board, canUpdate);
             probeNext();
         });
     }
@@ -216,8 +218,8 @@ public class MainActivity extends AppCompatActivity {
         refreshUpdateCard();
     }
 
-    private void addController(BluetoothDevice device, String version, String board) {
-        controllers.put(device.getAddress(), new Controller(device, version, board));
+    private void addController(BluetoothDevice device, String version, String board, boolean canUpdate) {
+        controllers.put(device.getAddress(), new Controller(device, version, board, canUpdate));
         MaterialRadioButton button = new MaterialRadioButton(this);
         button.setId(View.generateViewId());
         button.setTag(device.getAddress());
@@ -322,6 +324,13 @@ public class MainActivity extends AppCompatActivity {
     private void refreshUpdateCard() {
         Controller controller = selectedController();
         boolean busy = ota != null || downloading;
+        if (controller != null && !controller.canUpdate && !busy) {
+            fileText.setText(Board.displayName(controller.board));
+            compareText.setText("Controller firmware v" + controller.version
+                + ". Bluetooth updates are not available for this board yet; update it over USB.");
+            updateButton.setVisibility(View.GONE);
+            return;
+        }
         RemoteFirmware release = releaseFor(controller);
         String target = targetVersion(controller);
         boolean haveTarget = localFirmware != null || release != null;

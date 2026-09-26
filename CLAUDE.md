@@ -52,7 +52,8 @@ The nRF52840 sketch `ArduinoCode/MotoButtonsNRF/MotoButtonsNRF.ino` is a single 
 2.1 code from the `nRF52840` branch): RGB LED instead of an OLED, digital inputs with pull-downs
 (active high), settings in InternalFS, custom `BLEHidGeneric` descriptor with only the modes' keys,
 generic HID appearance. It reports `FIRMWARE_VERSION` (0x2A26) and `BOARD_PRODUCT_ID` (PnP ID) like
-the ESP32 build but has **no Bluetooth update service yet**, so the phone app does not list it.
+the ESP32 build but has **no Bluetooth update service yet**; the app lists it (PnP vendor Nordic
+0x1915 + known product) and says to update by USB.
 
 Elsewhere: `.github/workflows/compile.yml` compiles every board in `release.json` on every push, `Docs/` holds reference notes
 (read them before touching input handling or DMD2 behaviour), `Programming/README.md` is the
@@ -173,18 +174,18 @@ opens. Untested on hardware: if reconnects always take 90 s, the controller is n
 phone's private address and the switch should go to false.
 
 **Phone-only update path.** GitHub Pages serves the `gh-pages` branch: `index.html` (M3 setup wizard,
-template in `site/`), `moto-buttons.apk`, `firmware/<board>/<prod|beta>/MotoButtons2-<ver>.bin` and
+edited on `gh-pages` itself; this branch has no copy), `moto-buttons.apk`, `firmware/<board>/<prod|beta>/MotoButtons2-<ver>.bin` and
 `firmware/latest.json` = `{"boards":{"<board>":{"prod":{version,file,size,md5},"beta":{...}}}}`.
 Tags drive `.github/workflows/release.yml`: `<board>/v<ver>` (prod), `<board>/v<ver>-beta.N` (beta),
 `app/v<ver>`; it builds with the board's entry in `release.json` (`sketch`, `profile`, `ota`), checks
 the tag against the `MBFWVER=` tag in the build, and for `"ota": true` boards commits the `.bin` to
-`gh-pages` via `site/tools/publish.py` (which also checks `MBBOARD=`). Every build goes to a GitHub
+`gh-pages` via `.github/scripts/publish.py` (which also checks `MBBOARD=`). Every build goes to a GitHub
 Release; the nRF52840 one as `.zip` (DFU package) and `.hex`. The board is
 reported to the app as the Bluetooth PnP ID product (`BOARD_PRODUCT_ID`, no GATT change) and the
 `BOARD_ID_TAG` string is kept in the image by a run-time reference in `ota.cpp` (the linker drops an
 unused constant). Version order: 2.4.1-beta.2 < 2.4.1. The app (`RemoteFirmware.java`) reads
 `BuildConfig.SITE_URL + firmware/latest.json`; debug builds use `http://localhost:8000/` (serve
-`site/` and `adb reverse tcp:8000 tcp:8000`), release builds the Pages URL. Release signing key and
+a `gh-pages` worktree and `adb reverse tcp:8000 tcp:8000`), release builds the Pages URL. Release signing key and
 `keystore.properties` live in `%USERPROFILE%\.motobuttons\` (never in the repo). The app checks DMD
 Manage (`DmdSupport.java`, needs the `<queries>` entry), opens from the page via `motobuttons://open`
 (intent URL), shows "All set" after an update and can uninstall itself (`ACTION_DELETE`). It declares
@@ -195,8 +196,8 @@ Manage (`DmdSupport.java`, needs the `<queries>` entry), opens from the page via
 ABORT; notify event/status/value) and data `...0002` (writes with response), both encrypted-only.
 The image goes to the idle slot of the default OTA partition table; `Update.end()` checks the MD5 and
 the controller restarts after `OTA_RESTART_DELAY_MS`. The Firmware Revision characteristic (0x2A26) in
-the Device Information service carries `FIRMWARE_VERSION`; the app uses the update service to tell our
-controllers apart. The phone app mirrors the UUIDs in `Protocol.java`. Adding or changing a GATT
+the Device Information service carries `FIRMWARE_VERSION`; the app takes a device as ours when it has the update
+service or its PnP ID has vendor 0x303A/0x1915 and a known board product (`ControllerProbe.java`). The phone app mirrors the UUIDs in `Protocol.java`. Adding or changing a GATT
 service means every phone must forget and re-pair (Android caches the service list).
 
 **Watchdog.** The IDF task watchdog is reconfigured to `WATCHDOG_TIMEOUT_MS` (10 s) and the loop

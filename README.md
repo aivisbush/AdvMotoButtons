@@ -146,7 +146,7 @@ with. The page walks through three steps:
    (DMD Manage stays).
 
 The controller needs firmware 2.2.0 or newer for Bluetooth updates; older ones are flashed once by USB.
-The nRF52840 build has no Bluetooth update yet, so the app does not list it.
+The nRF52840 build (2.2.0 or newer) is listed with its version, but has no Bluetooth update yet: update it by USB.
 The app tells the boards apart (ESP32-C3 OLED, ESP32-C3, ESP32-C6, nRF52840) by the product ID in the
 controller's Bluetooth PnP ID and only offers that board's firmware. Its menu has **Beta firmware** to
 also offer newer beta releases, and **Use a .bin file** installs a firmware file saved on the phone
@@ -179,7 +179,7 @@ Board ids and the product IDs the firmware reports: esp32c3-oled 0x4001, esp32c3
 0x4003, nrf52840 0x4004 (`BOARD_ID_TAG` / `BOARD_PRODUCT_ID`). A new board needs an entry in
 `release.json`. For `app/` tags the repository needs two secrets (Settings > Secrets and variables >
 Actions): `ANDROID_KEYSTORE_BASE64` (the release key, `base64 -w0 release.jks`) and
-`ANDROID_KEYSTORE_PASSWORD`. Locally, `site/tools/publish.py --site <gh-pages checkout> --firmware <bin>
+`ANDROID_KEYSTORE_PASSWORD`. Locally, `.github/scripts/publish.py --site <gh-pages checkout> --firmware <bin>
 --channel prod|beta` does the same by hand. Keep the signing key (`%USERPROFILE%\.motobuttons\`) backed
 up: app updates must be signed with the same key.
 

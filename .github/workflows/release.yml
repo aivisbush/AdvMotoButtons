@@ -76,7 +76,7 @@ jobs:
         run: |
           git fetch origin gh-pages
           git worktree add pages origin/gh-pages
-          python3 site/tools/publish.py --site pages --template site \
+          python3 .github/scripts/publish.py --site pages \
             --firmware "dist/MotoButtons2-${{ steps.meta.outputs.board }}-${{ steps.meta.outputs.fullversion }}.bin" \
             --channel "${{ steps.meta.outputs.channel }}" \
             --expect-board "${{ steps.meta.outputs.board }}" --expect-version "${{ steps.meta.outputs.fullversion }}"
@@ -119,7 +119,7 @@ jobs:
         run: |
           git fetch origin gh-pages
           git worktree add pages origin/gh-pages
-          python3 site/tools/publish.py --site pages --template site --app Apps/Android/app/build/outputs/apk/release/app-release.apk
+          python3 .github/scripts/publish.py --site pages --app Apps/Android/app/build/outputs/apk/release/app-release.apk
           cd pages
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
