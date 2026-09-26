@@ -160,14 +160,21 @@ footer a { color: var(--primary); }
         <label class="switch"><input type="checkbox" id="dmdToggle"><span class="track"></span></label>
       </div>
       <div id="dmdSteps" hidden>
-        <p class="body" style="margin-top:12px">DMD2 reads the controller through THORK Racing's free <b class="ui">DMD Manage</b> app. Download it from their page:</p>
+        <p class="body" style="margin-top:12px">DMD2 reads the controller through THORK Racing's free <b class="ui">DMD Manage</b> app. It uses Accessibility, so Google Play Protect blocks it when installed from a browser (<b class="ui">App blocked to protect your device</b>). Switch the scan off only while installing:</p>
+        <ol class="taps">
+          <li><span>Open the <b class="ui">Play Store</b> &gt; your profile picture &gt; <b class="ui">Play Protect</b> &gt; <b class="ui">⚙</b> and switch off <b class="ui">Scan apps with Play Protect</b>.</span></li>
+          <li><span>Come back here and tap <b class="ui">Get DMD Manage</b>, then download the APK on THORK's page.</span></li>
+        </ol>
         <a class="btn tonal wide" href="https://docs.dmdnavigation.com/otherapps/manage-app/" target="_blank" rel="noopener">
           <svg viewBox="0 0 24 24"><path d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>Get DMD Manage
         </a>
-        <ol class="taps">
-          <li><span>On THORK's page, download the Manage app and install it the same way (<b class="ui">Open</b> &gt; <b class="ui">Install</b> &gt; if warned, <b class="ui">Install anyway</b>).</span></li>
-          <li><span>The Moto Buttons app then shows how to switch it on (Accessibility), including Android's <b class="ui">Allow restricted settings</b> step.</span></li>
+        <ol class="taps" style="counter-reset: tap 2">
+          <li><span>When the download finishes, tap <b class="ui">Open</b> (or open it from Downloads). If Android asks which app to use, choose <b class="ui">Package installer</b> &gt; <b class="ui">Just once</b>.</span></li>
+          <li><span>If Chrome is not allowed to install apps, tap <b class="ui">Settings</b>, switch on <b class="ui">Allow from this source</b>, go back and tap <b class="ui">Install</b>.</span></li>
+          <li><span>Switch <b class="ui">Scan apps with Play Protect</b> back on (Play Store &gt; Play Protect &gt; <b class="ui">⚙</b>).</span></li>
+          <li><span>Open the Moto Buttons app: its <b class="ui">DMD2 support</b> card shows how to switch DMD Manage on in Accessibility. If the switch is greyed out: <b class="ui">App info</b> &gt; <b class="ui">⋮</b> &gt; <b class="ui">Allow restricted settings</b>.</span></li>
         </ol>
+        <p class="small" style="margin-top:12px">Play Protect may later list DMD Manage as risky; it is THORK Racing's official app and safe to keep.</p>
       </div>
       <div class="actions">
         <button class="btn text" data-back>Back</button>
