@@ -195,6 +195,10 @@ void bleBegin()
   hidDevice->getDeviceInfoService()
     ->createCharacteristic((uint16_t)0x2A26, NIMBLE_PROPERTY::READ)
     ->setValue(std::string(FIRMWARE_VERSION));
+  // Model Number String, shown by the update app.
+  hidDevice->getDeviceInfoService()
+    ->createCharacteristic((uint16_t)0x2A24, NIMBLE_PROPERTY::READ)
+    ->setValue(std::string(BLE_DEVICE_MODEL));
   otaCreateService(bleServer);
 
   NimBLEAdvertising *advertising = NimBLEDevice::getAdvertising();

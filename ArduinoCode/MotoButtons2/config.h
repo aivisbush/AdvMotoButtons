@@ -20,7 +20,7 @@
 
 // Shown on the boot screen and printed to serial at start-up. The tag
 // prefix lets the update tools read the version straight from the .bin.
-constexpr char FIRMWARE_VERSION_TAG[] = "MBFWVER=2.5.0";
+constexpr char FIRMWARE_VERSION_TAG[] = "MBFWVER=2.5.1";
 constexpr const char *FIRMWARE_VERSION = FIRMWARE_VERSION_TAG + 8;
 
 /*------------------------------ BOARD -------------------------------*/
@@ -171,6 +171,8 @@ constexpr uint32_t OLED_BLANK_DISCONNECTED_MS = 60000;
  */
 constexpr char BLE_DEVICE_NAME[] = "DMD-Remote3";
 constexpr char BLE_MANUFACTURER[] = "Bush";
+// Model Number shown by the phone app under the controller; tells your controllers apart.
+constexpr char BLE_DEVICE_MODEL[] = "Bush Moto BT OLED1";
 constexpr int8_t BLE_TX_POWER_DBM = 9;
 
 /* Generic HID, not HID keyboard: Samsung takes a keyboard appearance as a
