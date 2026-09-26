@@ -1,0 +1,5 @@
+# Build output and tools from the code branches; the site is only the files below.
+Apps/
+Knowledge/
+ArduinoCode/
+MotoButtonsTool_data/
