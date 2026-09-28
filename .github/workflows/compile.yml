@@ -2,6 +2,8 @@ name: Compile firmware
 
 on:
   push:
+    # Branches only: release tags build in release.yml (path filters do not apply to tags).
+    branches: ['**']
     paths:
       - "ArduinoCode/**"
       - "release.json"
