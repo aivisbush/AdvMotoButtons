@@ -7,6 +7,14 @@
         "size": 655088,
         "md5": "2ea207b1de20906e3a28203983966898"
       }
+    },
+    "nrf52840": {
+      "prod": {
+        "version": "2.3.0",
+        "file": "nrf52840/prod/MotoButtons2-2.3.0.zip",
+        "size": 130938,
+        "md5": "cc6c65d72dc217eae6174339f337fc00"
+      }
     }
   }
 }
