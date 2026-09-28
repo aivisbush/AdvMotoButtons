@@ -508,12 +508,12 @@ public class MainActivity extends AppCompatActivity {
                 break;
             case ACCESSIBILITY_OFF:
                 dmdStatus.setText("DMD Manage is installed but not switched on.");
-                dmdHelp.setText("Accessibility > Installed apps > Manage > On. If it is greyed out: App info > ⋮ > Allow restricted settings, then try again.");
+                dmdHelp.setText("Accessibility > Installed apps > Manage > On. If Android says \"Restricted setting\": App info > ⋮ > Allow restricted settings, then try again.");
                 dmdButton.setText("Open accessibility settings");
                 dmdButton.setOnClickListener(v -> new MaterialAlertDialogBuilder(this)
                     .setTitle("Switch on DMD Manage")
                     .setMessage("1. In Accessibility, open Installed apps > Manage and switch it on.\n\n"
-                        + "2. If the switch is greyed out, open App info first, tap ⋮ (top right) > Allow restricted settings, then come back.")
+                        + "2. If Android says \"Restricted setting\", tap OK, then App info > ⋮ (top right) > Allow restricted settings, and switch it on again. The ⋮ entry appears only after that message.")
                     .setPositiveButton("Accessibility", (d, w) -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)))
                     .setNeutralButton("App info", (d, w) -> startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                         Uri.parse("package:" + DmdSupport.PACKAGE))))
@@ -545,7 +545,7 @@ public class MainActivity extends AppCompatActivity {
                 lvmButton.setOnClickListener(v -> new MaterialAlertDialogBuilder(this)
                     .setTitle("Switch on Moto Buttons for LVM GEO")
                     .setMessage("1. In Accessibility, open Installed apps > Moto Buttons for LVM GEO and switch it on.\n\n"
-                        + "2. If the switch is greyed out, open App info first, tap ⋮ (top right) > Allow restricted settings, then come back.")
+                        + "2. If Android says \"Restricted setting\", tap OK, then App info > ⋮ (top right) > Allow restricted settings, and switch it on again. The ⋮ entry appears only after that message.")
                     .setPositiveButton("Accessibility", (d, w) -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)))
                     .setNeutralButton("App info", (d, w) -> startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                         Uri.parse("package:" + getPackageName()))))

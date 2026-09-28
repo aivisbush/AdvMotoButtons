@@ -3,6 +3,7 @@ package com.bush.motobuttons;
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
 import android.accessibilityservice.GestureDescription;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
@@ -49,10 +50,12 @@ public class LvmGeoService extends AccessibilityService {
         } catch (PackageManager.NameNotFoundException e) {
             return State.NOT_INSTALLED;
         }
+        // The id may be "package/.Class" or "package/package.Class".
+        ComponentName self = new ComponentName(context, LvmGeoService.class);
         AccessibilityManager manager = context.getSystemService(AccessibilityManager.class);
         if (manager != null) {
             for (AccessibilityServiceInfo info : manager.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)) {
-                if (info.getId() != null && info.getId().equals(context.getPackageName() + "/" + LvmGeoService.class.getName()))
+                if (info.getId() != null && self.equals(ComponentName.unflattenFromString(info.getId())))
                     return State.READY;
             }
         }
