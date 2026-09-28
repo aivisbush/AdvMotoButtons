@@ -21,7 +21,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - id: list
-        run: echo "matrix=$(jq -c '[.boards | to_entries[] | {board: .key, sketch: .value.sketch, profile: .value.profile, flags: (.value.flags // "")}]' release.json)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "matrix=$(jq -c '[.boards | to_entries[] | {board: .key, sketch: .value.sketch, profile: .value.profile, flags: (.value.flags // "")}]' release.json)" >> "$GITHUB_OUTPUT"
 
   compile:
     needs: boards
