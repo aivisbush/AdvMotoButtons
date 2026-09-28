@@ -34,6 +34,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: arduino/setup-arduino-cli@v2
+      # The nRF52840 core packs the .zip with adafruit-nrfutil and calls python; on Linux neither ships with it.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: nRF52840 packaging tool
+        if: ${{ matrix.board == 'nrf52840' }}
+        run: pip install adafruit-nrfutil
       - name: Compile
         run: |
           flags="${{ matrix.flags }}"
