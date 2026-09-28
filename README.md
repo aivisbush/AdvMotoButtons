@@ -76,6 +76,11 @@ long press itself (see the [controller implementation guide](Docs/dmd2-controlle
   the Bluetooth connection interval, which the serial log shows at connect
 - Joystick centre - unbound
 
+OsmAnd mode also drives [LVM GEO](https://play.google.com/store/apps/details?id=com.lvm.mobile.du) (pan and
+zoom). LVM GEO has no key for its GPS button; the Moto Buttons phone app (1.7+) can press it for button C:
+switch on **Moto Buttons for LVM GEO** in Android's accessibility settings (the app's LVM GEO card leads there).
+C then centres the map when it has been moved away, and does nothing while the map already follows you.
+
 `Locus` mode - for [Locus Map](https://play.google.com/store/apps/details?id=menion.android.locus). In
 Locus, enable **Settings > Controlling > Use hardware buttons**; the pan distance per press is
 **Map movement step** in the expert settings:

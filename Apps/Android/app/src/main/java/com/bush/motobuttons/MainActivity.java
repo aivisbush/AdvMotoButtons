@@ -40,7 +40,7 @@ import java.util.concurrent.Executors;
 
 /**
  * Finds the paired Moto Buttons controller, checks the project site for newer
- * firmware and installs it over Bluetooth; also checks DMD2 support.
+ * firmware and installs it over Bluetooth; also checks DMD2 and LVM GEO support.
  */
 @SuppressLint({"MissingPermission", "SetTextI18n"})
 public class MainActivity extends AppCompatActivity {
@@ -49,10 +49,10 @@ public class MainActivity extends AppCompatActivity {
 
     private View mainView, doneView;
     private TextView controllerStatus, compareText, fileText, progressText, statusText, doneText;
-    private TextView dmdStatus, dmdHelp;
+    private TextView dmdStatus, dmdHelp, lvmStatus, lvmHelp;
     private LinearProgressIndicator searchProgress, updateProgress;
     private RadioGroup controllerGroup;
-    private Button searchButton, updateButton, dmdButton;
+    private Button searchButton, updateButton, dmdButton, lvmButton;
 
     private final ExecutorService background = Executors.newSingleThreadExecutor();
     private final Map<String, Controller> controllers = new LinkedHashMap<>();
@@ -100,6 +100,9 @@ public class MainActivity extends AppCompatActivity {
         dmdStatus = findViewById(R.id.dmdStatus);
         dmdHelp = findViewById(R.id.dmdHelp);
         dmdButton = findViewById(R.id.dmdButton);
+        lvmStatus = findViewById(R.id.lvmStatus);
+        lvmHelp = findViewById(R.id.lvmHelp);
+        lvmButton = findViewById(R.id.lvmButton);
         doneText = findViewById(R.id.doneText);
 
         MaterialToolbar toolbar = findViewById(R.id.toolbar);
@@ -136,6 +139,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         refreshDmdCard(); // the user may come back from Settings or the installer
+        refreshLvmCard();
     }
 
     /* ---------------------------- controllers --------------------------- */
@@ -520,6 +524,38 @@ public class MainActivity extends AppCompatActivity {
                 dmdStatus.setText("Ready. DMD2 sees the controller as DMD Remote 3.");
                 dmdHelp.setText("");
                 dmdButton.setVisibility(View.GONE);
+                break;
+        }
+    }
+
+    /* ------------------------------ LVM GEO ----------------------------- */
+
+    private void refreshLvmCard() {
+        switch (LvmGeoService.state(this)) {
+            case NOT_INSTALLED:
+                lvmStatus.setText("LVM GEO is not installed.");
+                lvmHelp.setText("Only needed to use the controller with LVM GEO.");
+                lvmButton.setVisibility(View.GONE);
+                break;
+            case SERVICE_OFF:
+                lvmStatus.setText("Button C does not centre the map yet.");
+                lvmHelp.setText("LVM GEO has no key for its GPS button. Switch on Moto Buttons for LVM GEO in Accessibility "
+                    + "and button C presses it for you. Use the controller in OsmAnd mode.");
+                lvmButton.setText("Open accessibility settings");
+                lvmButton.setOnClickListener(v -> new MaterialAlertDialogBuilder(this)
+                    .setTitle("Switch on Moto Buttons for LVM GEO")
+                    .setMessage("1. In Accessibility, open Installed apps > Moto Buttons for LVM GEO and switch it on.\n\n"
+                        + "2. If the switch is greyed out, open App info first, tap ⋮ (top right) > Allow restricted settings, then come back.")
+                    .setPositiveButton("Accessibility", (d, w) -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)))
+                    .setNeutralButton("App info", (d, w) -> startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:" + getPackageName()))))
+                    .show());
+                lvmButton.setVisibility(View.VISIBLE);
+                break;
+            default:
+                lvmStatus.setText("Ready. In OsmAnd mode, button C centres LVM GEO's map on your position.");
+                lvmHelp.setText("Keep this app installed: removing it switches this off.");
+                lvmButton.setVisibility(View.GONE);
                 break;
         }
     }

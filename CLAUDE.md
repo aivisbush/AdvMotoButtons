@@ -146,6 +146,14 @@ it. The on-screen button centres at once; no key does. C is `Held` for the press
 bike phone to centre at once with a real GPS fix. Arrows are raw down/up like DMD2; Locus pans by its
 *Map movement step* setting.
 
+**LVM GEO** (`com.lvm.mobile.du`, 5.4.2) runs in OsmAnd mode: it is a Cordova web app on Leaflet, whose
+keyboard handler gives the arrows and `=`/`-`. It has no key for its GPS button (a `<div id="location-button">`
+without `tabindex`). App 1.7's accessibility service `LvmGeoService` takes the controller's `C` (PnP vendor/
+product or name `DMD-Remote3`) while LVM GEO is in front and taps that node's centre with a gesture (the
+page ignores `ACTION_CLICK`; keys injected by adb never reach the service, test with the controller). The button toggles: filled
+blue = following (a press turns GPS off), white = moved away; the service samples its colour from a screenshot
+and presses only when not blue. Tested on the Galaxy S21 with LVM GEO 5.4.2, controller in OsmAnd mode.
+
 **The controller must not look like a typing keyboard**, or Android hides the on-screen keyboard.
 Two independent checks, both verified on a Galaxy S21 (nRF52840 branch, same fix here):
 1. Android marks a device `ALPHAKEY` when its declared keys include `Q`. So the keyboard collection

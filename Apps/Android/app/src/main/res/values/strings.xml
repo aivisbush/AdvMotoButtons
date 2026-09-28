@@ -7,6 +7,9 @@
     <string name="firmware_update">Firmware</string>
     <string name="update_firmware">Update firmware</string>
     <string name="dmd_support">DMD2 support</string>
+    <string name="lvm_support">LVM GEO support</string>
+    <string name="lvm_service_label">Moto Buttons for LVM GEO</string>
+    <string name="lvm_service_description">Lets button C on the Moto Buttons controller press the GPS button in LVM GEO, so the map centres on your position. It acts only while LVM GEO is open and only on the controller\'s C key.</string>
     <string name="use_file">Use a firmware file</string>
     <string name="beta_firmware">Beta firmware</string>
     <string name="all_set">All set</string>

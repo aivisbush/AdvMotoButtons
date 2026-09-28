@@ -16,6 +16,8 @@
     <!-- Lets the app see whether DMD Manage is installed. -->
     <queries>
         <package android:name="com.thorkracing.wireddevices" />
+        <!-- Lets the app see whether LVM GEO is installed. -->
+        <package android:name="com.lvm.mobile.du" />
     </queries>
 
     <application
@@ -49,5 +51,18 @@
         <service
             android:name=".DfuService"
             android:exported="false" />
+        <!-- Button C on the controller presses LVM GEO's GPS button. -->
+        <service
+            android:name=".LvmGeoService"
+            android:exported="false"
+            android:label="@string/lvm_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/lvm_geo_service" />
+        </service>
     </application>
 </manifest>
